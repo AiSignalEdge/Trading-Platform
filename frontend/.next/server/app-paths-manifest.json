@@ -1,0 +1,5 @@
+{
+  "/backtest/page": "app/backtest/page.js",
+  "/page": "app/page.js",
+  "/strategies/page": "app/strategies/page.js"
+}
