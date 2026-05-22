@@ -520,7 +520,7 @@ async def run_batch_backtest(
     )
 
 
-@router.get("/batch", response_model=list)
+@router.get("/batch/list", response_model=list)
 async def list_batch_jobs(
     limit: int = Query(20, ge=1, le=100),
 ):
@@ -775,6 +775,21 @@ async def run_monte_carlo(
 
     mc_job_id = f"mc-{uuid4().hex[:8]}"
 
+    # Store in BatchEngine for later retrieval
+    mc_job = BatchJob(
+        job_id=mc_job_id,
+        name=f"mc-{request.strategy}",
+        created_at=datetime.now(timezone.utc),
+        status=JobStatus.COMPLETED,
+        total=1,
+        completed=1,
+        failed=0,
+        progress_pct=100.0,
+        completed_at=datetime.now(timezone.utc),
+        results=[{"total_return": float(np.median(all_returns))}],
+    )
+    BatchEngine._jobs[mc_job_id] = mc_job
+
     return MonteCarloResponse(
         job_id=mc_job_id,
         status="completed",
@@ -789,7 +804,7 @@ async def run_monte_carlo(
     )
 
 
-@router.get("/monte-carlo", response_model=list)
+@router.get("/monte-carlo/list", response_model=list)
 async def list_monte_carlo_jobs(
     limit: int = Query(20, ge=1, le=100),
 ):
