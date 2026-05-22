@@ -633,6 +633,8 @@ async def run_walk_forward(
         progress_pct=100.0,
         completed_at=datetime.now(timezone.utc),
         results=[{
+            "train_return": float(getattr(r, 'training_return', None) or 0.0),
+            "test_return": float(r.total_return * 100) if r.total_return else 0.0,
             "total_return": float(r.total_return * 100) if r.total_return else 0.0,
             "total_return_pct": float(r.total_return_pct) if r.total_return_pct else 0.0,
             "sharpe_ratio": float(r.sharpe_ratio) if r.sharpe_ratio else 0.0,
@@ -677,7 +679,7 @@ async def get_walk_forward_result(
         raise HTTPException(status_code=404, detail="Walk-forward result not found")
     # Results are dicts with keys: total_return, total_return_pct, sharpe_ratio,
     # max_drawdown_pct, total_trades, etc.
-    train_returns = [_to_py(r.get("total_return", 0) or 0) for r in results]
+    train_returns = [_to_py(r.get("train_return", 0) or 0) for r in results]
     test_returns = [_to_py(r.get("test_return", r.get("total_return", 0))) for r in results]
     avg_train = sum(train_returns) / len(train_returns) if train_returns else 0.0
     avg_test = sum(test_returns) / len(test_returns) if test_returns else 0.0
@@ -781,12 +783,20 @@ async def run_monte_carlo(
         name=f"mc-{request.strategy}",
         created_at=datetime.now(timezone.utc),
         status=JobStatus.COMPLETED,
-        total=1,
+        total=request.n_runs,  # store original n_runs
         completed=1,
         failed=0,
         progress_pct=100.0,
         completed_at=datetime.now(timezone.utc),
-        results=[{"total_return": float(np.median(all_returns))}],
+        results=[{
+            "median_return": float(np.median(all_returns)),
+            "percentile_5_return": float(all_returns_sorted[p5_idx]),
+            "percentile_95_return": float(all_returns_sorted[p95_idx]),
+            "median_sharpe": float(np.median(all_sharpe)),
+            "max_drawdown_p5": float(np.percentile(all_drawdowns, 5)),
+            "win_rate_p5": float(np.sum([1 for r in all_returns if r > 0]) / len(all_returns)),
+            "all_returns": [_to_py(float(r)) for r in all_returns],
+        }],
     )
     BatchEngine._jobs[mc_job_id] = mc_job
 
@@ -821,14 +831,28 @@ async def get_monte_carlo_result(
     if not job:
         raise HTTPException(status_code=404, detail="Monte Carlo job not found")
     results = job.results
-    all_returns = [_to_py(r.get("total_return", 0) or 0) for r in results]
+    if not results:
+        raise HTTPException(status_code=404, detail="Monte Carlo result not found")
+    r = results[0]
+    all_returns = r.get("all_returns", [])
+    # Recompute stats from stored all_returns
+    all_returns_sorted = sorted(all_returns) if all_returns else []
+    p5_idx = max(0, int(len(all_returns_sorted) * 0.05))
+    p95_idx = min(len(all_returns_sorted) - 1, int(len(all_returns_sorted) * 0.95))
+    median_sharpe = r.get("median_sharpe", 0.0)
+    max_drawdown_p5 = r.get("max_drawdown_p5", 0.0)
+    win_rate_p5 = r.get("win_rate_p5", 0.0)
     return MonteCarloResponse(
         job_id=job_id,
         status=job.status.value,
-        n_runs=_to_py(len(results)),
-        median_return=_to_py(float(np.median(all_returns))) if all_returns else 0.0,
-        percentile_5_return=_to_py(float(np.percentile(all_returns, 5))) if all_returns else 0.0,
-        percentile_95_return=_to_py(float(np.percentile(all_returns, 95))) if all_returns else 0.0,
+        n_runs=job.total,
+        median_return=_to_py(r.get("median_return")),
+        percentile_5_return=_to_py(r.get("percentile_5_return")),
+        percentile_95_return=_to_py(r.get("percentile_95_return")),
+        median_sharpe=_to_py(median_sharpe),
+        max_drawdown_p5=_to_py(max_drawdown_p5),
+        win_rate_p5=_to_py(win_rate_p5),
+        all_returns=[_to_py(float(x)) for x in all_returns] if all_returns else None,
     )
 
 
