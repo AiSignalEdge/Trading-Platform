@@ -148,6 +148,38 @@ async function runPortfolioBacktest(payload: {
   return res.json();
 }
 
+async function runPortfolioWalkForward(payload: {
+  name: string;
+  strategies: Array<{ strategy: string; symbols: string[]; weight?: number; strategy_params?: object }>;
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+  commission_pct: number;
+  slippage_pct: number;
+  leverage: number;
+  max_positions: number;
+  exchange: "binance";
+  timeframe: string;
+  max_sector_exposure: number;
+  correlation_threshold: number;
+  correlation_reduction: number;
+  max_drawdown_pct: number;
+  train_days: number;
+  test_days: number;
+  skip_days: number;
+}): Promise<any> {
+  const res = await fetch(`/api/v1/backtest/portfolio-walk-forward`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─── Step components ───────────────────────────────────────────────────────
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
@@ -254,6 +286,18 @@ export default function BacktestPage() {
   // Portfolio run mutation
   const portfolioRunMutation = useMutation({
     mutationFn: runPortfolioBacktest,
+    onSuccess: (data) => {
+      setResult(data);
+      setStep(6);
+    },
+    onError: (err: Error) => {
+      setRunError(err.message);
+    },
+  });
+
+  // Portfolio walk-forward mutation
+  const portfolioWalkForwardMutation = useMutation({
+    mutationFn: runPortfolioWalkForward,
     onSuccess: (data) => {
       setResult(data);
       setStep(6);
@@ -883,12 +927,16 @@ export default function BacktestPage() {
 
   // ─── Portfolio Settings Step ───────────────────────────────────────────────
 
-  const PortfolioSettingsStep = ({ capital, setCapital, leverage, setLeverage, maxPos, setMaxPos, makerFee, setMakerFee, slippageBps, setSlippageBps }: {
+  const PortfolioSettingsStep = ({ capital, setCapital, leverage, setLeverage, maxPos, setMaxPos, makerFee, setMakerFee, slippageBps, setSlippageBps, walkForward, setWalkForward, trainDays, setTrainDays, testDays, setTestDays, skipDays, setSkipDays }: {
     capital: number; setCapital: (v: number) => void;
     leverage: number; setLeverage: (v: number) => void;
     maxPos: number; setMaxPos: (v: number) => void;
     makerFee: number; setMakerFee: (v: number) => void;
     slippageBps: number; setSlippageBps: (v: number) => void;
+    walkForward: boolean; setWalkForward: (v: boolean) => void;
+    trainDays: number; setTrainDays: (v: number) => void;
+    testDays: number; setTestDays: (v: number) => void;
+    skipDays: number; setSkipDays: (v: number) => void;
   }) => {
     return (
       <div className="space-y-5">
@@ -954,6 +1002,65 @@ export default function BacktestPage() {
             min={0}
             className="w-full bg-[#0f0f1a] border border-[#1e1e2e] rounded-lg p-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
           />
+        </div>
+
+        {/* Walk-Forward Analysis Toggle */}
+        <div className="border border-[#1e1e2e] rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-slate-300 text-sm font-medium">Walk-Forward Analysis</div>
+              <div className="text-slate-500 text-xs">Split into train/test windows for out-of-sample validation</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWalkForward(!walkForward)}
+              className={`w-12 h-6 rounded-full transition-colors relative ${
+                walkForward ? "bg-purple-500" : "bg-[#1e1e2e]"
+              }`}
+            >
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                walkForward ? "translate-x-7" : "translate-x-1"
+              }`} />
+            </button>
+          </div>
+
+          {walkForward && (
+            <div className="grid grid-cols-3 gap-3 pl-2 border-l-2 border-purple-500/30 mt-3">
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">Train (days)</label>
+                <input
+                  type="number"
+                  value={trainDays}
+                  onChange={e => setTrainDays(Number(e.target.value))}
+                  min={7}
+                  max={180}
+                  className="w-full bg-[#0f0f1a] border border-[#1e1e2e] rounded-lg p-2 text-sm text-slate-200 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">Test (days)</label>
+                <input
+                  type="number"
+                  value={testDays}
+                  onChange={e => setTestDays(Number(e.target.value))}
+                  min={1}
+                  max={30}
+                  className="w-full bg-[#0f0f1a] border border-[#1e1e2e] rounded-lg p-2 text-sm text-slate-200 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">Skip (days)</label>
+                <input
+                  type="number"
+                  value={skipDays}
+                  onChange={e => setSkipDays(Number(e.target.value))}
+                  min={0}
+                  max={14}
+                  className="w-full bg-[#0f0f1a] border border-[#1e1e2e] rounded-lg p-2 text-sm text-slate-200 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1156,7 +1263,7 @@ export default function BacktestPage() {
     );
   };
 
-  // ─── Portfolio state refs (hoisted for form submit) ────────────────────────
+// Portfolio state refs (hoisted for form submit)
   const portfolioSettingsRef = useRef({ capital: 10000, leverage: 1, maxPos: 5, makerFee: 0.0002, slippageBps: 5, startDate: "", endDate: "" });
 
   // Portfolio settings state (lifted so we can reference in submit)
@@ -1168,9 +1275,15 @@ export default function BacktestPage() {
   const [portfolioStartDate, setPortfolioStartDate] = useState(DEFAULT_VALUES.start_date);
   const [portfolioEndDate, setPortfolioEndDate] = useState(DEFAULT_VALUES.end_date);
 
+  // Walk-forward state
+  const [portfolioWalkForward, setPortfolioWalkForward] = useState(false);
+  const [portfolioTrainDays, setPortfolioTrainDays] = useState(30);
+  const [portfolioTestDays, setPortfolioTestDays] = useState(7);
+  const [portfolioSkipDays, setPortfolioSkipDays] = useState(0);
+
   // Portfolio run handler
   const handlePortfolioRun = () => {
-    const payload = {
+    const basePayload = {
       name: "Portfolio Backtest",
       strategies: portfolioStrategies.map(s => ({
         strategy: s.strategy,
@@ -1193,7 +1306,16 @@ export default function BacktestPage() {
       max_drawdown_pct: 0.2,
     };
     setRunError(null);
-    portfolioRunMutation.mutate(payload);
+    if (portfolioWalkForward) {
+      portfolioWalkForwardMutation.mutate({
+        ...basePayload,
+        train_days: portfolioTrainDays,
+        test_days: portfolioTestDays,
+        skip_days: portfolioSkipDays,
+      });
+    } else {
+      portfolioRunMutation.mutate(basePayload);
+    }
   };
 
   // ─── Navigation ────────────────────────────────────────────────────────────
@@ -1393,6 +1515,10 @@ export default function BacktestPage() {
                   maxPos={portfolioMaxPos} setMaxPos={setPortfolioMaxPos}
                   makerFee={portfolioMakerFee} setMakerFee={setPortfolioMakerFee}
                   slippageBps={portfolioSlippageBps} setSlippageBps={setPortfolioSlippageBps}
+                  walkForward={portfolioWalkForward} setWalkForward={setPortfolioWalkForward}
+                  trainDays={portfolioTrainDays} setTrainDays={setPortfolioTrainDays}
+                  testDays={portfolioTestDays} setTestDays={setPortfolioTestDays}
+                  skipDays={portfolioSkipDays} setSkipDays={setPortfolioSkipDays}
                 />
                 <div className="flex items-center justify-between mt-4">
                   <button
@@ -1406,11 +1532,11 @@ export default function BacktestPage() {
                   <button
                     type="button"
                     onClick={handlePortfolioRun}
-                    disabled={portfolioRunMutation.isPending}
+                    disabled={portfolioWalkForward ? portfolioWalkForwardMutation.isPending : portfolioRunMutation.isPending}
                     className="flex items-center gap-2 px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors disabled:opacity-50"
                   >
                     <Play size={16} />
-                    {portfolioRunMutation.isPending ? "Running..." : "Run Portfolio"}
+                    {portfolioWalkForward ? (portfolioWalkForwardMutation.isPending ? "Running..." : "Run Walk-Forward") : (portfolioRunMutation.isPending ? "Running..." : "Run Portfolio")}
                   </button>
                 </div>
               </div>
