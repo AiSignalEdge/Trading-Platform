@@ -669,6 +669,8 @@ class PortfolioEngine:
 
         windows = []
 
+        # Pre-build window specs before running in parallel
+        window_specs: list[dict] = []
         for i in range(n_windows):
             train_start = start_date + timedelta(days=i * window_duration)
             train_end = train_start + timedelta(days=train_days)
@@ -682,7 +684,6 @@ class PortfolioEngine:
             if (train_end - train_start).days < 7 or (test_end - test_start).days < 1:
                 continue
 
-            # Run on train period
             train_cfg = PortfolioConfig(
                 strategies=config.strategies,
                 start_date=train_start,
@@ -700,9 +701,6 @@ class PortfolioEngine:
                 atr_period=config.atr_period,
             )
 
-            train_result = await self.run(train_cfg)
-
-            # Run on test period
             test_cfg = PortfolioConfig(
                 strategies=config.strategies,
                 start_date=test_start,
@@ -720,18 +718,28 @@ class PortfolioEngine:
                 atr_period=config.atr_period,
             )
 
-            test_result = await self.run(test_cfg)
+            window_specs.append({
+                "i": i,
+                "train_start": train_start,
+                "train_end": train_end,
+                "test_start": test_start,
+                "test_end": test_end,
+                "train_cfg": train_cfg,
+                "test_cfg": test_cfg,
+            })
 
+        async def run_one_window(spec: dict):
+            train_result = await self.run(spec["train_cfg"])
+            test_result = await self.run(spec["test_cfg"])
             train_return = train_result.portfolio_metrics.total_return if train_result else 0.0
             test_return = test_result.portfolio_metrics.total_return if test_result else 0.0
             avg_corr = test_result.avg_correlation if test_result else 0.0
-
-            windows.append({
-                "window_id": i,
-                "train_start": train_start.strftime("%Y-%m-%d"),
-                "train_end": train_end.strftime("%Y-%m-%d"),
-                "test_start": test_start.strftime("%Y-%m-%d"),
-                "test_end": test_end.strftime("%Y-%m-%d"),
+            return {
+                "window_id": spec["i"],
+                "train_start": spec["train_start"].strftime("%Y-%m-%d"),
+                "train_end": spec["train_end"].strftime("%Y-%m-%d"),
+                "test_start": spec["test_start"].strftime("%Y-%m-%d"),
+                "test_end": spec["test_end"].strftime("%Y-%m-%d"),
                 "train_return": float(train_return),
                 "test_return": float(test_return),
                 "portfolio_return": float(test_return),
@@ -747,7 +755,10 @@ class PortfolioEngine:
                 "allocation": [
                     a.__dict__ for a in (train_result.allocations if train_result else [])
                 ],
-            })
+            }
+
+        results = await asyncio.gather(*[run_one_window(spec) for spec in window_specs])
+        windows = list(results)
 
         if not windows:
             return {
