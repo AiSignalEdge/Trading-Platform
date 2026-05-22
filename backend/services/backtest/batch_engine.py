@@ -220,6 +220,7 @@ class BatchEngine:
             created_at=datetime.now(timezone.utc),
             status=JobStatus.QUEUED,
             total=len(configs),
+            configs=configs,
         )
         cls._jobs[job_id] = job
 

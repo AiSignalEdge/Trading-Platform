@@ -645,6 +645,142 @@ class PortfolioEngine:
         )
         return result
 
+    async def run_walk_forward(
+        self,
+        config: PortfolioConfig,
+        train_days: int,
+        test_days: int,
+        skip_days: int,
+    ) -> dict:
+        """Run walk-forward portfolio analysis across multiple train/test windows.
+
+        For each window:
+          1. Run portfolio backtest on train period → get train_return, train_metrics, allocation, correlation
+          2. Run portfolio backtest on test period with same allocations → get test_return, test_metrics
+        """
+        from datetime import timedelta
+
+        start_date = config.start_date or datetime(2024, 1, 1)
+        end_date = config.end_date or datetime(2025, 1, 1)
+
+        window_duration = test_days + skip_days
+        n_windows = max(0, (end_date - start_date).days - train_days) // window_duration
+        n_windows = max(n_windows, 1)
+
+        windows = []
+
+        for i in range(n_windows):
+            train_start = start_date + timedelta(days=i * window_duration)
+            train_end = train_start + timedelta(days=train_days)
+            test_start = train_end + timedelta(days=skip_days)
+            test_end = test_start + timedelta(days=test_days)
+
+            # Stop if test window exceeds end_date
+            if test_end > end_date:
+                test_end = end_date
+
+            if (train_end - train_start).days < 7 or (test_end - test_start).days < 1:
+                continue
+
+            # Run on train period
+            train_cfg = PortfolioConfig(
+                strategies=config.strategies,
+                start_date=train_start,
+                end_date=train_end,
+                initial_capital=config.initial_capital,
+                commission_pct=config.commission_pct,
+                slippage_pct=config.slippage_pct,
+                leverage=config.leverage,
+                max_sector_exposure=config.max_sector_exposure,
+                max_positions=config.max_positions,
+                correlation_threshold=config.correlation_threshold,
+                correlation_reduction=config.correlation_reduction,
+                max_drawdown_pct=config.max_drawdown_pct,
+                target_dollar_risk=config.target_dollar_risk,
+                atr_period=config.atr_period,
+            )
+
+            train_result = await self.run(train_cfg)
+
+            # Run on test period
+            test_cfg = PortfolioConfig(
+                strategies=config.strategies,
+                start_date=test_start,
+                end_date=test_end,
+                initial_capital=config.initial_capital,
+                commission_pct=config.commission_pct,
+                slippage_pct=config.slippage_pct,
+                leverage=config.leverage,
+                max_sector_exposure=config.max_sector_exposure,
+                max_positions=config.max_positions,
+                correlation_threshold=config.correlation_threshold,
+                correlation_reduction=config.correlation_reduction,
+                max_drawdown_pct=config.max_drawdown_pct,
+                target_dollar_risk=config.target_dollar_risk,
+                atr_period=config.atr_period,
+            )
+
+            test_result = await self.run(test_cfg)
+
+            train_return = train_result.portfolio_metrics.total_return if train_result else 0.0
+            test_return = test_result.portfolio_metrics.total_return if test_result else 0.0
+            avg_corr = test_result.avg_correlation if test_result else 0.0
+
+            windows.append({
+                "window_id": i,
+                "train_start": train_start.strftime("%Y-%m-%d"),
+                "train_end": train_end.strftime("%Y-%m-%d"),
+                "test_start": test_start.strftime("%Y-%m-%d"),
+                "test_end": test_end.strftime("%Y-%m-%d"),
+                "train_return": float(train_return),
+                "test_return": float(test_return),
+                "portfolio_return": float(test_return),
+                "train_metrics": {
+                    "sharpe": float(train_result.portfolio_metrics.sharpe_ratio) if train_result else 0.0,
+                    "max_drawdown_pct": float(train_result.max_drawdown_pct) if train_result else 0.0,
+                },
+                "test_metrics": {
+                    "sharpe": float(test_result.portfolio_metrics.sharpe_ratio) if test_result else 0.0,
+                    "max_drawdown_pct": float(test_result.max_drawdown_pct) if test_result else 0.0,
+                },
+                "correlation": float(avg_corr),
+                "allocation": [
+                    a.__dict__ for a in (train_result.allocations if train_result else [])
+                ],
+            })
+
+        if not windows:
+            return {
+                "job_id": "",
+                "status": "no_data",
+                "n_windows": 0,
+                "avg_train_return": 0.0,
+                "avg_test_return": 0.0,
+                "overfit_score": 0.0,
+                "avg_portfolio_return": 0.0,
+                "avg_correlation": 0.0,
+                "windows": [],
+            }
+
+        avg_train = sum(w["train_return"] for w in windows) / len(windows)
+        avg_test = sum(w["test_return"] for w in windows) / len(windows)
+        avg_portfolio = sum(w["portfolio_return"] for w in windows) / len(windows)
+        avg_corr = sum(w["correlation"] for w in windows) / len(windows)
+        overfit = (avg_test / avg_train) if avg_train != 0 else 0.0
+        overfit = max(0.0, min(2.0, overfit))
+
+        return {
+            "job_id": "",
+            "status": "completed",
+            "n_windows": len(windows),
+            "avg_train_return": float(avg_train),
+            "avg_test_return": float(avg_test),
+            "overfit_score": float(overfit),
+            "avg_portfolio_return": float(avg_portfolio),
+            "avg_correlation": float(avg_corr),
+            "windows": windows,
+        }
+
     def _load_candles(
         self,
         symbol: str,

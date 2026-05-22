@@ -1208,3 +1208,199 @@ async def run_portfolio_backtest(
             )
         ],
     )
+
+
+# ====================
+# Portfolio Walk-Forward
+# ====================
+
+class PortfolioWFStrategyRequest(BaseModel):
+    """One strategy × symbols for portfolio walk-forward."""
+    strategy: str
+    symbols: list[str]
+
+
+class PortfolioWalkForwardRequest(BaseModel):
+    """Request to run portfolio walk-forward analysis."""
+    strategies: list[PortfolioWFStrategyRequest]
+    start_date: str
+    end_date: str
+    train_days: int = 30
+    test_days: int = 7
+    skip_days: int = 0
+    initial_capital: float = 10000.0
+    commission_pct: float = 0.0002
+    slippage_pct: float = 0.0005
+    leverage: float = 1.0
+    max_positions: int = 5
+    exchange: str = "binance"
+    timeframe: str = "4h"
+    max_sector_exposure: float = 0.3
+    correlation_threshold: float = 0.7
+    correlation_reduction: float = 0.5
+    max_drawdown_pct: float = 0.2
+
+
+class PortfolioWalkForwardResponse(BaseModel):
+    """Portfolio walk-forward result."""
+    job_id: str
+    status: str
+    n_windows: int
+    avg_train_return: Optional[float] = None
+    avg_test_return: Optional[float] = None
+    overfit_score: Optional[float] = None
+    avg_portfolio_return: Optional[float] = None
+    avg_correlation: Optional[float] = None
+    windows: Optional[list] = None
+
+
+@router.post("/portfolio-walk-forward", response_model=PortfolioWalkForwardResponse)
+async def run_portfolio_walk_forward(
+    request: PortfolioWalkForwardRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run portfolio walk-forward analysis.
+    Trains on in-sample data, tests on out-of-sample across multiple windows.
+    """
+    from datetime import datetime, timezone as tz
+    from services.backtest.portfolio_engine import (
+        PortfolioEngine,
+        PortfolioConfig,
+        PortfolioStrategyConfig,
+    )
+    from services.data.candle_store import CandleStore
+
+    # Build strategy configs
+    strategy_configs = [
+        PortfolioStrategyConfig(
+            strategy_name=s.strategy,
+            symbols=s.symbols,
+        )
+        for s in request.strategies
+    ]
+
+    portfolio_cfg = PortfolioConfig(
+        strategies=strategy_configs,
+        start_date=datetime.fromisoformat(request.start_date.replace("Z", "+00:00")) if request.start_date else None,
+        end_date=datetime.fromisoformat(request.end_date.replace("Z", "+00:00")) if request.end_date else None,
+        initial_capital=request.initial_capital,
+        commission_pct=request.commission_pct,
+        slippage_pct=request.slippage_pct,
+        leverage=request.leverage,
+        max_positions=request.max_positions,
+        max_sector_exposure=request.max_sector_exposure,
+        correlation_threshold=request.correlation_threshold,
+        correlation_reduction=request.correlation_reduction,
+        max_drawdown_pct=request.max_drawdown_pct,
+    )
+
+    candle_store = CandleStore()
+    engine = PortfolioEngine(candle_store=candle_store, exchange=request.exchange, timeframe=request.timeframe)
+
+    job_id = f"pw-{uuid4().hex[:8]}"
+
+    try:
+        wf_result = await engine.run_walk_forward(
+            portfolio_cfg,
+            train_days=request.train_days,
+            test_days=request.test_days,
+            skip_days=request.skip_days,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Portfolio walk-forward failed: {str(e)}")
+
+    wf_result["job_id"] = job_id
+
+    # Store in BatchEngine for later retrieval
+    job = BatchJob(
+        job_id=job_id,
+        name=f"pw-portfolio-wf",
+        created_at=datetime.now(tz.utc),
+        status=JobStatus.COMPLETED,
+        total=wf_result["n_windows"],
+        completed=wf_result["n_windows"],
+        failed=0,
+        progress_pct=100.0,
+        completed_at=datetime.now(tz.utc),
+        results=[{"window": w} for w in wf_result.get("windows", [])],
+    )
+    BatchEngine._jobs[job_id] = job
+
+    return PortfolioWalkForwardResponse(
+        job_id=job_id,
+        status=wf_result["status"],
+        n_windows=wf_result["n_windows"],
+        avg_train_return=_to_py(wf_result["avg_train_return"]),
+        avg_test_return=_to_py(wf_result["avg_test_return"]),
+        overfit_score=_to_py(wf_result["overfit_score"]),
+        avg_portfolio_return=_to_py(wf_result["avg_portfolio_return"]),
+        avg_correlation=_to_py(wf_result["avg_correlation"]),
+        windows=[{
+            "window_id": w["window_id"],
+            "train_start": w["train_start"],
+            "train_end": w["train_end"],
+            "test_start": w["test_start"],
+            "test_end": w["test_end"],
+            "train_return": _to_py(w["train_return"]),
+            "test_return": _to_py(w["test_return"]),
+            "portfolio_return": _to_py(w["portfolio_return"]),
+            "train_metrics": w.get("train_metrics", {}),
+            "test_metrics": w.get("test_metrics", {}),
+            "correlation": _to_py(w["correlation"]),
+            "allocation": w.get("allocation", []),
+        } for w in wf_result.get("windows", [])],
+    )
+
+
+@router.get("/portfolio-walk-forward/{job_id}", response_model=PortfolioWalkForwardResponse)
+async def get_portfolio_walk_forward_result(
+    job_id: str,
+):
+    """Get portfolio walk-forward result by job_id."""
+    job = BatchEngine.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Portfolio walk-forward job not found")
+
+    windows = []
+    for r in job.results:
+        w = r.get("window", {})
+        if w:
+            windows.append({
+                "window_id": w.get("window_id"),
+                "train_start": w.get("train_start"),
+                "train_end": w.get("train_end"),
+                "test_start": w.get("test_start"),
+                "test_end": w.get("test_end"),
+                "train_return": _to_py(w.get("train_return")),
+                "test_return": _to_py(w.get("test_return")),
+                "portfolio_return": _to_py(w.get("portfolio_return")),
+                "train_metrics": w.get("train_metrics", {}),
+                "test_metrics": w.get("test_metrics", {}),
+                "correlation": _to_py(w.get("correlation")),
+                "allocation": w.get("allocation", []),
+            })
+
+    train_returns = [_to_py(w.get("train_return", 0)) for w in windows]
+    test_returns = [_to_py(w.get("test_return", 0)) for w in windows]
+    correlations = [_to_py(w.get("correlation", 0)) for w in windows]
+
+    avg_train = sum(train_returns) / len(train_returns) if train_returns else 0.0
+    avg_test = sum(test_returns) / len(test_returns) if test_returns else 0.0
+    avg_corr = sum(correlations) / len(correlations) if correlations else 0.0
+    avg_portfolio = avg_test  # portfolio return on test = test_return
+
+    overfit = (avg_test / avg_train) if avg_train != 0 else 0.0
+    overfit = max(0.0, min(2.0, overfit))
+
+    return PortfolioWalkForwardResponse(
+        job_id=job_id,
+        status=job.status.value,
+        n_windows=len(windows),
+        avg_train_return=_to_py(avg_train),
+        avg_test_return=_to_py(avg_test),
+        overfit_score=_to_py(overfit),
+        avg_portfolio_return=_to_py(avg_portfolio),
+        avg_correlation=_to_py(avg_corr),
+        windows=windows,
+    )
