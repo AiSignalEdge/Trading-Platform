@@ -128,6 +128,8 @@ class BatchJob:
         error: Optional[str] = None,
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
+        results: Optional[list] = None,
+        configs: Optional[list] = None,
     ):
         self.job_id = job_id
         self.name = name
@@ -140,6 +142,8 @@ class BatchJob:
         self.error = error
         self.started_at = started_at
         self.completed_at = completed_at
+        self.results = results if results is not None else []
+        self.configs = configs if configs is not None else []
 
     def to_dict(self) -> dict:
         return {
@@ -259,12 +263,22 @@ class BatchEngine:
         try:
             for i, cfg_item in enumerate(job.configs):
                 try:
+                    # Ensure dates are datetime objects (they may be strings from API layer)
+                    start_date = cfg_item.start_date
+                    end_date = cfg_item.end_date
+                    if isinstance(start_date, str):
+                        from dateutil.parser import parse as parse_date
+                        start_date = parse_date(start_date)
+                    if isinstance(end_date, str):
+                        from dateutil.parser import parse as parse_date
+                        end_date = parse_date(end_date)
+
                     cfg = BacktestConfig(
                         strategy_name=cfg_item.strategy,
                         symbols=[cfg_item.pair],
                         timeframe=cfg_item.timeframe,
-                        start_date=cfg_item.start_date,
-                        end_date=cfg_item.end_date,
+                        start_date=start_date,
+                        end_date=end_date,
                         initial_cash=cfg_item.initial_cash,
                         commission=cfg_item.commission,
                         slippage=cfg_item.slippage,
@@ -293,8 +307,13 @@ class BatchEngine:
                             "win_rate": float(r.win_rate),
                             "profit_factor": float(r.profit_factor),
                         })
+                        job.completed += 1
+                    else:
+                        # No results = data unavailable or strategy produced nothing
+                        job.failed += 1
+                        job.error = f"No results for config {cfg_item.id} ({cfg_item.pair}, {cfg_item.timeframe}) — check data availability"
+                        logger.warning(job.error)
 
-                    job.completed += 1
                     job.progress_pct = float(job.completed / job.total * 100) if job.total > 0 else 0.0
 
                 except Exception as e:
@@ -316,7 +335,7 @@ class BatchEngine:
         """Return paginated results for a batch job."""
         job = cls._jobs.get(job_id)
         if not job:
-            return {"total": 0, "items": [], "page": page, "page_size": page_size}
+            return {"found": False, "total": 0, "items": [], "page": page, "page_size": page_size}
 
         all_results = getattr(job, "results", [])
         total = len(all_results)
@@ -325,6 +344,7 @@ class BatchEngine:
         items = all_results[start:end]
 
         return {
+            "found": True,
             "total": total,
             "page": page,
             "page_size": page_size,

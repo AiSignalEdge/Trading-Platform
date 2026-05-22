@@ -18,7 +18,7 @@ from core.database import get_db
 from models.backtest import BacktestConfig, BacktestResult
 import models.user  # noqa: F401 — needed for queries against User table
 from services.backtest.engine import BacktestEngine, BacktestConfig as EngineConfig
-from services.backtest.batch_engine import BatchEngine, BatchConfigItem
+from services.backtest.batch_engine import BatchEngine, BatchConfigItem, BatchJob, JobStatus
 
 router = APIRouter(prefix="/api/v1/backtest", tags=["backtest"])
 
@@ -482,28 +482,6 @@ async def get_backtest_trades(
     }
 
 
-@router.delete("/{backtest_id}")
-async def delete_backtest_result(
-    backtest_id: UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Delete a backtest result.
-    """
-    result = await db.execute(
-        select(BacktestResult).where(BacktestResult.id == backtest_id)
-    )
-    backtest = result.scalar_one_or_none()
-    
-    if not backtest:
-        raise HTTPException(status_code=404, detail="Backtest result not found")
-    
-    await db.delete(backtest)
-    await db.flush()
-    
-    return {"message": "Backtest result deleted successfully"}
-
-
 @router.post("/batch", response_model=BatchRunResponse)
 async def run_batch_backtest(
     request: BatchRunRequest,
@@ -542,6 +520,14 @@ async def run_batch_backtest(
     )
 
 
+@router.get("/batch", response_model=list)
+async def list_batch_jobs(
+    limit: int = Query(20, ge=1, le=100),
+):
+    """List all batch jobs."""
+    return BatchEngine.list_jobs(limit=limit)
+
+
 @router.get("/batch/{job_id}", response_model=BatchProgressResponse)
 async def get_batch_progress(
     job_id: str,
@@ -570,22 +556,15 @@ async def get_batch_results(
 ):
     """Get all results from a batch backtest job."""
     result = await BatchEngine.get_results(job_id, page=page, page_size=page_size)
-    if result["total"] == 0 and "items" not in result:
+    if not result.get("found"):
         raise HTTPException(status_code=404, detail="Batch job not found")
     return result
-
-
-@router.get("/batch", response_model=list)
-async def list_batch_jobs(
-    limit: int = Query(20, ge=1, le=100),
-):
-    """List all batch jobs."""
-    return BatchEngine.list_jobs(limit=limit)
 
 
 @router.post("/walk-forward", response_model=WalkForwardResponse)
 async def run_walk_forward(
     request: WalkForwardRequest,
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Run walk-forward analysis.
@@ -634,13 +613,38 @@ async def run_walk_forward(
         train_returns.append(getattr(r, 'training_return', None) or 0.0)
         test_returns.append(r.total_return or 0.0)
         in_sample_sharpe_vals.append(r.sharpe_ratio or 0.0)
+        oos_sharpe_vals.append(getattr(r, 'oos_sharpe_ratio', None) or r.sharpe_ratio or 0.0)
 
     avg_train = sum(train_returns) / len(train_returns) if train_returns else 0.0
     avg_test = sum(test_returns) / len(test_returns) if test_returns else 0.0
     overfit = (avg_test / avg_train) if avg_train != 0 else 0.0
 
+    wf_job_id = f"wf-{uuid4().hex[:8]}"
+
+    # Store in BatchEngine for later retrieval
+    job = BatchJob(
+        job_id=wf_job_id,
+        name=f"wf-{request.strategy}",
+        created_at=datetime.now(timezone.utc),
+        status=JobStatus.COMPLETED,
+        total=len(results),
+        completed=len(results),
+        failed=0,
+        progress_pct=100.0,
+        completed_at=datetime.now(timezone.utc),
+        results=[{
+            "total_return": float(r.total_return * 100) if r.total_return else 0.0,
+            "total_return_pct": float(r.total_return_pct) if r.total_return_pct else 0.0,
+            "sharpe_ratio": float(r.sharpe_ratio) if r.sharpe_ratio else 0.0,
+            "max_drawdown_pct": float(r.max_drawdown_pct) if r.max_drawdown_pct else 0.0,
+            "total_trades": int(r.total_trades) if r.total_trades else 0,
+            "win_rate": float(r.win_rate) if r.win_rate else 0.0,
+        } for r in results],
+    )
+    BatchEngine._jobs[wf_job_id] = job
+
     return WalkForwardResponse(
-        job_id=f"wf-{uuid4().hex[:8]}",
+        job_id=wf_job_id,
         status="completed",
         n_windows=_to_py(len(results)),
         avg_train_return=_to_py(avg_train),
@@ -671,21 +675,26 @@ async def get_walk_forward_result(
     results = job.results
     if not results:
         raise HTTPException(status_code=404, detail="Walk-forward result not found")
-    train_returns = [_to_py(r.return_pct or 0) for r in results]
+    # Results are dicts with keys: total_return, total_return_pct, sharpe_ratio,
+    # max_drawdown_pct, total_trades, etc.
+    train_returns = [_to_py(r.get("total_return", 0) or 0) for r in results]
+    test_returns = [_to_py(r.get("test_return", r.get("total_return", 0))) for r in results]
     avg_train = sum(train_returns) / len(train_returns) if train_returns else 0.0
+    avg_test = sum(test_returns) / len(test_returns) if test_returns else 0.0
+    overfit = (avg_test / avg_train) if avg_train != 0 else 0.0
     return WalkForwardResponse(
         job_id=job_id,
         status=job.status.value,
         n_windows=_to_py(len(results)),
         avg_train_return=_to_py(avg_train),
-        avg_test_return=_to_py(avg_train),  # placeholder
-        overfit_score=0.0,
+        avg_test_return=_to_py(avg_test),
+        overfit_score=_to_py(overfit),
         windows=[{
-            "train_return": _to_py(r.return_pct),
-            "test_return": _to_py(r.return_pct),
-            "sharpe": _to_py(r.sharpe_ratio),
-            "max_drawdown_pct": _to_py(r.max_drawdown_pct),
-            "trades": _to_py(r.total_trades),
+            "train_return": _to_py(r.get("train_return")),
+            "test_return": _to_py(r.get("test_return", r.get("total_return"))),
+            "sharpe": _to_py(r.get("sharpe_ratio")),
+            "max_drawdown_pct": _to_py(r.get("max_drawdown_pct")),
+            "trades": _to_py(r.get("total_trades")),
         } for r in results],
     )
 
@@ -764,8 +773,10 @@ async def run_monte_carlo(
     p5_idx = max(0, int(len(all_returns_sorted) * 0.05))
     p95_idx = min(len(all_returns_sorted) - 1, int(len(all_returns_sorted) * 0.95))
 
+    mc_job_id = f"mc-{uuid4().hex[:8]}"
+
     return MonteCarloResponse(
-        job_id=f"mc-{uuid4().hex[:8]}",
+        job_id=mc_job_id,
         status="completed",
         n_runs=_to_py(request.n_runs),
         median_return=_to_py(float(np.median(all_returns))),
@@ -795,7 +806,7 @@ async def get_monte_carlo_result(
     if not job:
         raise HTTPException(status_code=404, detail="Monte Carlo job not found")
     results = job.results
-    all_returns = [_to_py(r.return_pct or 0) for r in results]
+    all_returns = [_to_py(r.get("total_return", 0) or 0) for r in results]
     return MonteCarloResponse(
         job_id=job_id,
         status=job.status.value,
