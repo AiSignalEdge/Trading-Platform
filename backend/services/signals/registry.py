@@ -29,7 +29,13 @@ class Signal:
     price: float           # price at signal time
     indicators: dict        # snapshot of indicator values that generated it
     strategy: str
+    signal_index: int = -1  # integer position in the source DataFrame (set by strategy)
     metadata: dict = field(default_factory=dict)
+
+    @property
+    def direction_int(self) -> int:
+        """Numeric direction: 1=long, -1=short, 0=neutral."""
+        return {"long": 1, "short": -1, "neutral": 0}.get(self.direction, 0)
 
     def is_active(self, max_age_seconds: int = 3600) -> bool:
         age = (datetime.now(timezone.utc) - self.timestamp).total_seconds()
@@ -40,7 +46,7 @@ class Signal:
             "timestamp": self.timestamp.isoformat(),
             "symbol": self.symbol,
             "direction": self.direction,
-            "strength": self.signal_strength,
+            "strength": self.strength,
             "price": self.price,
             "indicators": self.indicators,
             "strategy": self.strategy,
@@ -122,6 +128,7 @@ class MACrossStrategy(BaseStrategy):
                         "spread": float(df["ma_fast"].iloc[i] - df["ma_slow"].iloc[i]),
                     },
                     strategy=self.name,
+                    signal_index=i,
                 ))
         return signals
 
@@ -161,8 +168,9 @@ class RSIStrategy(BaseStrategy):
                 direction=direction,
                 strength=strength,
                 price=df["close"].iloc[i],
-                indicators={"rsi": rsi_val},
+                indicators={},
                 strategy=self.name,
+                signal_index=i,
             ))
         return signals
 
@@ -198,6 +206,7 @@ class BollingerBandsStrategy(BaseStrategy):
                         "bb_width": df["bb_width"].iloc[i],
                     },
                     strategy=self.name,
+                    signal_index=i,
                 ))
             elif df["close"].iloc[i] < df["bb_lower"].iloc[i]:
                 signals.append(Signal(
@@ -212,6 +221,7 @@ class BollingerBandsStrategy(BaseStrategy):
                         "bb_width": df["bb_width"].iloc[i],
                     },
                     strategy=self.name,
+                    signal_index=i,
                 ))
         return signals
 
@@ -245,12 +255,9 @@ class MACDStrategy(BaseStrategy):
                 direction=direction,
                 strength=strength,
                 price=df["close"].iloc[i],
-                indicators={
-                    "macd": df["macd"].iloc[i],
-                    "macd_signal": df["macd_signal"].iloc[i],
-                    "macd_hist": curr_hist,
-                },
+                indicators={"macd_hist": curr_hist},
                 strategy=self.name,
+                signal_index=i,
             ))
         return signals
 
@@ -265,9 +272,10 @@ def register_strategy(cls: type[BaseStrategy]):
     return cls
 
 
-def get_strategy(name: str) -> type[BaseStrategy]:
+def get_strategy(name: str, config: Optional[dict] = None) -> BaseStrategy:
+    """Return an instantiated strategy by name."""
     if name in _registry:
-        return _registry[name]
+        return _registry[name](config=config or {})
     raise ValueError(f"Unknown strategy: {name}. Available: {list(_registry.keys())}")
 
 

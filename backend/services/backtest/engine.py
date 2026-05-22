@@ -11,9 +11,25 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from core.config import settings
+from services.signals.registry import get_strategy as strategy_from_dict
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PerformanceMetrics:
+    """Standard performance metrics for a backtest run."""
+    total_return: float = 0.0
+    sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0
+    calmar_ratio: float = 0.0
+    max_drawdown_pct: float = 0.0
+    win_rate: float = 0.0
+    profit_factor: float = 0.0
+    expectancy: float = 0.0
+    trades: int = 0
+    avg_trade_pnl: float = 0.0
+    avg_trade_duration_bars: int = 0
 
 
 def _warmup_vectorbt():
@@ -42,7 +58,7 @@ def _warmup_vectorbt():
         logger.warning(f"vectorbt warmup skipped: {e}")
 
 
-_warmup_vectorbt()
+# _warmup_vectorbt()  # deferred
 
 
 @dataclass
@@ -55,11 +71,12 @@ class BacktestConfig:
     timeframe: str = "1h"
     initial_cash: float = 10_000.0
     leverage: float = 1.0
+    extra_data: Optional[dict] = None   # strategy params live here under key "strategy_params"
 
     # Execution params
     commission: float = 0.001      # 0.1% taker
-    slippage: float = 0.0005      # 0.05%
-    maker_fee: float = 0.0004     # 0.04%
+    slippage: float = 0.0005       # 0.05%
+    maker_fee: float = 0.0004      # 0.04%
     funding_rate: float = 0.0      # for futures
 
     # Risk params
@@ -161,7 +178,9 @@ class BacktestEngine:
         self.config = config
 
         # VectorBT global settings
+        import vectorbt as vbt
         vbt.settings.array_wrapper["freq"] = self._freq_map(config.timeframe)
+        self._vbt = vbt  # store on self so _run_single can use it
 
     def _freq_map(self, tf: str) -> str:
         map_ = {
@@ -185,11 +204,13 @@ class BacktestEngine:
                 logger.info(f"[run] Processing symbol={symbol}")
 
                 # Load candles
+                import vectorbt as vbt  # reload per-call for thread safety
+                self._vbt = vbt
                 candles = await CandleStore.get(
                     self.config.exchange, symbol, self.config.timeframe,
                     since=self.config.start_date,
                     until=self.config.end_date,
-                    limit=50000,
+                    limit=2000,  # cap for performance
                 )
                 logger.info(f"[DEBUG] {symbol}: got {len(candles)} candles")
 
@@ -230,7 +251,7 @@ class BacktestEngine:
         # Run with vectorbt
         import traceback
         try:
-            pf = vbt.Portfolio.from_signals(
+            pf = self._vbt.Portfolio.from_signals(
                 close=close,
                 entries=entries,
                 exits=exits,
@@ -271,8 +292,8 @@ class BacktestEngine:
         results = []
 
         for i in range(n_windows):
-            train_end = i * test_days
-            train_start = train_end - train_days
+            train_start = i * test_days
+            train_end = train_start + train_days
 
             train_df = df.iloc[train_start:train_end]
             test_df = df.iloc[train_end:train_end + test_days]
@@ -283,7 +304,7 @@ class BacktestEngine:
             close = test_df["close"].values
             entries, exits = self._generate_signals(close)
 
-            pf = vbt.Portfolio.from_signals(
+            pf = self._vbt.Portfolio.from_signals(
                 close=close,
                 entries=entries,
                 exits=exits,
@@ -313,20 +334,29 @@ class BacktestEngine:
 
     def _generate_signals(self, close: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
-        Generate entry/exit signals. Override this per strategy.
-        Default: simple MA crossover.
-        Returns: entries (bool), exits (bool) — same shape as close.
+        Generate entry/exit signals via the strategy registry.
+        Calls strategy.compute(df) → strategy.generate_signals(df) → converts list[Signal] to (entries, exits).
         """
-        import talib
+        strategy = strategy_from_dict(self.config.strategy_name, self.config.extra_data)
 
-        # Simple MA cross as default
-        ma_fast = talib.SMA(close, 10)
-        ma_slow = talib.SMA(close, 30)
+        # Build a minimal DataFrame so strategies can access df["close"] etc.
+        df = pd.DataFrame({"close": close})
 
-        entries = (ma_fast > ma_slow) & (np.roll(ma_fast, 1) <= ma_slow)
-        exits = (ma_fast < ma_slow) & (np.roll(ma_fast, 1) >= ma_slow)
-        entries[0] = False
-        exits[0] = False
+        # Compute indicators first (strategies expect columns like ma_fast, rsi, etc.)
+        df = strategy.compute(df)
+
+        raw_signals = strategy.generate_signals(df)
+
+        entries = np.zeros(len(close), dtype=bool)
+        exits = np.zeros(len(close), dtype=bool)
+
+        for sig in raw_signals:
+            if sig.signal_index < 0 or sig.signal_index >= len(close):
+                continue
+            if sig.direction_int == 1:    # long → entry
+                entries[sig.signal_index] = True
+            elif sig.direction_int == -1:  # short → exit
+                exits[sig.signal_index] = True
 
         return entries, exits
 

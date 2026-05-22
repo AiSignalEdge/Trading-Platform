@@ -1,0 +1,16 @@
+[Unit]
+Description=Trading Backend API (Hermes)
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/.hermes/profiles/coder/workspace/Trading/backend
+Environment="DATABASE_URL=postgresql+asyncpg://trading_user:Trading%402025@localhost:5432/trading_db"
+ExecStart=/home/ubuntu/.hermes/profiles/coder/workspace/Trading/backend/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

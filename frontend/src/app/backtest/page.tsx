@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -45,7 +45,7 @@ type FormValues = z.infer<typeof formSchema>;
 const DEFAULT_VALUES: FormValues = {
   strategy: "ma_cross",
   pairs: ["BTC/USDT"],
-  timeframes: ["1h"],
+  timeframes: ["4h"],
   start_date: (() => {
     const d = new Date();
     d.setDate(d.getDate() - 60);
@@ -169,12 +169,28 @@ export default function BacktestPage() {
   const [runError, setRunError] = useState<string | null>(null);
   const [selectedPair, setSelectedPair] = useState<string>("BTC/USDT");
 
-  const { control, handleSubmit, watch, formState: { errors }, setValue } = useForm<FormValues>({
+  // Restore focus after step changes so keyboard navigation isn't interrupted
+  const [prevStep, setPrevStep] = useState(1);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const { control, handleSubmit, watch, formState: { errors }, setValue, trigger } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: DEFAULT_VALUES,
   });
 
   const watchedValues = watch();
+
+  // Move focus to heading after step change so screen reader + keyboard stay in the form
+  useEffect(() => {
+    if (step !== prevStep) {
+      setPrevStep(step);
+      // Small tick to let DOM settle, then move focus
+      const id = requestAnimationFrame(() => {
+        headingRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [step, prevStep]);
 
   // Fetch markets for pair selector
   const { data: marketsData } = useQuery({
@@ -850,6 +866,41 @@ export default function BacktestPage() {
     );
   };
 
+  // ─── Navigation ────────────────────────────────────────────────────────────
+
+  const StepNav = () => (
+    <div className="flex items-center justify-between mt-4">
+      <button
+        type="button"
+        onClick={back}
+        disabled={step === 1}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#1e1e2e] text-slate-400 hover:text-white hover:border-slate-500 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        <ChevronLeft size={16} /> Back
+      </button>
+
+      <div className="text-slate-500 text-sm">{STEP_LABELS[step - 1]}</div>
+
+      {step < 5 ? (
+        <button
+          type="submit"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
+        >
+          Next <ChevronRight size={16} />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={runMutation.isPending}
+          className="flex items-center gap-2 px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors disabled:opacity-50"
+        >
+          <Play size={16} />
+          {runMutation.isPending ? "Running..." : "Run Backtest"}
+        </button>
+      )}
+    </div>
+  );
+
   // ─── Step label ─────────────────────────────────────────────────────────
 
   const STEP_LABELS = ["Strategy", "Universe", "Capital & Risk", "Costs", "Advanced"];
@@ -858,61 +909,61 @@ export default function BacktestPage() {
     <div className="p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-bold text-white flex items-center gap-3 outline-none">
           <BarChart3 size={24} className="text-blue-400" />
           Backtest Runner
         </h1>
         <p className="text-slate-400 text-sm mt-1">Configure and run event-driven backtests with full metrics</p>
       </div>
 
-      {step < 6 ? (
+      {step < 6 && (
         <>
           <StepIndicator current={step} total={5} />
 
-          <form onSubmit={onSubmit}>
-            <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
-              {step === 1 && <StrategyStep />}
-              {step === 2 && <UniverseStep />}
-              {step === 3 && <CapitalStep />}
-              {step === 4 && <CostsStep />}
-              {step === 5 && <AdvancedStep />}
-            </div>
-
-            {/* Navigation */}
-            <div className="flex items-center justify-between mt-4">
-              <button
-                type="button"
-                onClick={back}
-                disabled={step === 1}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#1e1e2e] text-slate-400 hover:text-white hover:border-slate-500 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft size={16} /> Back
-              </button>
-
-              <div className="text-slate-500 text-sm">{STEP_LABELS[step - 1]}</div>
-
-              {step < 5 ? (
-                <button
-                  type="button"
-                  onClick={next}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
-                >
-                  Next <ChevronRight size={16} />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={runMutation.isPending}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors disabled:opacity-50"
-                >
-                  <Play size={16} />
-                  {runMutation.isPending ? "Running..." : "Run Backtest"}
-                </button>
-              )}
-            </div>
-          </form>
+          {step === 1 && (
+            <form onSubmit={async (e) => { e.preventDefault(); const ok = await trigger(['strategy']); if (ok) next(); }}>
+              <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
+                <StrategyStep />
+              </div>
+              <StepNav />
+            </form>
+          )}
+          {step === 2 && (
+            <form onSubmit={async (e) => { e.preventDefault(); const ok = await trigger(['pairs', 'timeframes', 'start_date', 'end_date']); if (ok) next(); }}>
+              <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
+                <UniverseStep />
+              </div>
+              <StepNav />
+            </form>
+          )}
+          {step === 3 && (
+            <form onSubmit={async (e) => { e.preventDefault(); const ok = await trigger(['initial_capital', 'leverage', 'position_sizing', 'max_positions', 'direction']); if (ok) next(); }}>
+              <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
+                <CapitalStep />
+              </div>
+              <StepNav />
+            </form>
+          )}
+          {step === 4 && (
+            <form onSubmit={async (e) => { e.preventDefault(); const ok = await trigger(['maker_fee', 'taker_fee', 'slippage_model']); if (ok) next(); }}>
+              <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
+                <CostsStep />
+              </div>
+              <StepNav />
+            </form>
+          )}
+          {step === 5 && (
+            <form onSubmit={onSubmit}>
+              <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
+                <AdvancedStep />
+              </div>
+              <StepNav />
+            </form>
+          )}
         </>
-      ) : (
+      )}
+
+      {step === 6 && (
         <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
           <ResultsStep />
         </div>

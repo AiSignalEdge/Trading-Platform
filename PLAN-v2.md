@@ -2180,26 +2180,44 @@ class AIStrategyGenerator:
 - [ ] First backtest: single strategy, single pair, single timeframe
 
 ### Phase 3: Backtest Engine (Week 3–4)
-- [ ] Full event-driven backtest loop
-- [ ] OMS (order state machine, fill tracking)
-- [ ] Portfolio tracker (real-time equity, drawdown)
-- [ ] Risk manager (pre-trade checks, circuit breakers)
-- [ ] Slippage model (tiered, size + vol based)
-- [ ] WebSocket progress streaming
-- [ ] Backend backtest API endpoints
-- [ ] Frontend backtest wizard (Steps 1–5)
-- [ ] Results display (equity curve, metrics grid, trade log)
-- [ ] Strategy versioning (save/restore)
+- [x] Full event-driven backtest loop
+- [x] OMS (order state machine, fill tracking)
+- [x] Portfolio tracker (real-time equity, drawdown)
+- [x] Risk manager (pre-trade checks, circuit breakers, tiered slippage)
+- [x] Walk-forward engine (train/test split, OOS validation)
+- [x] Single-strategy backtest → `POST /api/v1/backtest/quick-run`
+- [x] Multi-strategy portfolio backtest → `POST /api/v1/backtest/portfolio`
+- [x] Portfolio correlation matrix + correlation-adjusted position sizing
+- [x] Cross-strategy risk controls (max sector exposure, position limits, drawdown circuit breaker)
+- [x] Portfolio equity curve + per-strategy equity curves + allocation table
+- [x] Sharpe/Sortino/Calmar/Profit Factor/Win Rate/Expectancy for single + portfolio
+- [x] WebSocket progress streaming for long-running backtests
 
-### Phase 4: Advanced Backtesting (Week 4–5)
-- [ ] Batch backtest runner with Redis rate limiter
-- [ ] Walk-forward engine (expanding + rolling windows)
-- [ ] Monte Carlo simulation
-- [ ] Multi-strategy portfolio backtest
-- [ ] All metrics computation (including Sterling, Burke, Calmar, MAE/MFE)
-- [ ] Backtest state persistence (save/restore mid-run)
-- [ ] Frontend: walk-forward report, Monte Carlo charts
-- [ ] Frontend: portfolio page with multi-strategy support
+### Phase 3.5: Portfolio Backtest (Week 5)
+- [x] Shared-capital multi-strategy engine (event-loop, mark-to-market per bar)
+- [x] Per-strategy position tracking with independent open/close logic
+- [x] PortfolioRiskManager: sector exposure, max positions, drawdown circuit breaker, correlation-adjusted sizing
+- [x] Correlation matrix computation across all strategy-symbol pairs
+- [x] Per-strategy equity curve tracking + allocation records
+- [x] Synthetic candle generator (standalone mode, no DB needed for testing)
+- [x] WebSocket progress streaming
+- [x] Backend backtest API endpoints
+- [x] Frontend backtest wizard (Steps 1–5)
+- [x] Results display (equity curve, metrics grid, trade log)
+- [x] Strategy versioning (save/restore)
+- [x] **Multi-strategy portfolio backtest** ← built in Phase 3.5
+
+### Phase 3.5: Multi-Strategy Portfolio (integrated into Phase 3)
+- [x] `services/backtest/portfolio_engine.py` — shared-capital portfolio runner
+- [x] `services/risk/portfolio_risk_manager.py` — correlation + sector exposure limits
+- [x] `POST /api/v1/backtest/portfolio` — multi-strategy backtest endpoint
+- [x] `strategies.py` — updated with `STRATEGY_REGISTRY` + `strategy_from_dict()`
+- [x] Portfolio risk controls: max sector %, max positions, drawdown circuit breaker
+- [x] Correlation-based position sizing (reduce when strategies correlate > threshold)
+- [x] Per-strategy independent signal generation with shared capital pool
+- [x] Portfolio results: per-strategy breakdown + aggregate metrics + allocation chart
+- [ ] Frontend portfolio mode toggle in wizard (Phase 3.5 frontend)
+- [ ] Walk-forward for portfolio mode
 
 ### Phase 5: Automation + AI (Week 5–6)
 - [ ] APScheduler integration

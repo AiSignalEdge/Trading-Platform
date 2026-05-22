@@ -615,7 +615,11 @@ async def quick_run_backtest(
         initial_cash=request.initial_capital,
         leverage=request.leverage,
         commission=request.taker_fee,
-        slippage=request.slippage_bps / 10000.0 if request.slippage_bps else 0.0005,
+        slippage=(
+            request.slippage_bps / 10000.0
+            if request.slippage_bps
+            else {"dynamic": 0.0005, "fixed": 0.001, "sqrt": 0.00075}.get(request.slippage_model, 0.0005)
+        ),
         exchange=request.exchange,
         start_date=datetime.fromisoformat(request.start_date.replace("Z", "+00:00")) if request.start_date else datetime.now(tz.utc) - timedelta(days=60),
         end_date=datetime.fromisoformat(request.end_date.replace("Z", "+00:00")) if request.end_date else datetime.now(tz.utc),
@@ -626,7 +630,7 @@ async def quick_run_backtest(
     try:
         engine_results = await engine.run()
         if not engine_results:
-            raise HTTPException(status_code=500, detail="Backtest produced no results")
+            raise HTTPException(status_code=500, detail=f"Backtest produced no results — engine returned: {engine_results!r}")
 
         r = engine_results[0]
 
@@ -735,3 +739,154 @@ async def quick_run_backtest(
         db.add(db_result)
         await db.commit()
         raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
+
+
+# ====================
+# Portfolio Backtest
+# ====================
+
+class PortfolioStrategyRequest(BaseModel):
+    """One strategy × symbols for portfolio backtest."""
+    strategy: str
+    symbols: list[str]
+    weight: float = 1.0
+    strategy_params: Optional[dict] = None
+
+
+class PortfolioRunRequest(BaseModel):
+    """Run a multi-strategy portfolio backtest."""
+    name: str = "Portfolio Backtest"
+    strategies: list[PortfolioStrategyRequest]
+    start_date: str
+    end_date: str
+    exchange: str = "binance"
+    timeframe: str = "4h"
+    initial_capital: float = 50_000.0
+    commission_pct: float = 0.001
+    slippage_pct: float = 0.0005
+    leverage: float = 1.0
+    max_positions: int = 10
+    max_sector_exposure: float = 0.3
+    correlation_threshold: float = 0.7
+    correlation_reduction: float = 0.8
+    max_drawdown_pct: float = 0.20
+
+
+class PortfolioAllocationRecord(BaseModel):
+    strategy: str
+    symbol: str
+    weight: float
+    return_pct: float
+    trades: int
+    sharpe: float
+
+
+class PortfolioResultResponse(BaseModel):
+    """Portfolio backtest result."""
+    portfolio_metrics: dict
+    equity_curve: list[float]
+    allocations: list[PortfolioAllocationRecord]
+    correlation_matrix: list[list[float]]
+    max_correlation: float
+    avg_correlation: float
+    max_drawdown_pct: float
+    strategy_results: list[dict]  # condensed per-strategy results
+
+
+@router.post("/portfolio", response_model=PortfolioResultResponse)
+async def run_portfolio_backtest(
+    request: PortfolioRunRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run a multi-strategy portfolio backtest.
+    Each strategy runs independently on its symbols with shared capital,
+    correlation-based sizing, and cross-strategy risk controls.
+    """
+    from datetime import datetime, timezone as tz
+    from uuid import uuid4
+
+    # Import here to avoid circular imports
+    from services.backtest.portfolio_engine import (
+        PortfolioEngine,
+        PortfolioConfig,
+        PortfolioStrategyConfig,
+    )
+    from services.data.candle_store import CandleStore
+
+    # Build portfolio config
+    strategy_configs = [
+        PortfolioStrategyConfig(
+            strategy_name=s.strategy,
+            symbols=s.symbols,
+            weight=s.weight,
+            extra_data={"params": s.strategy_params} if s.strategy_params else None,
+        )
+        for s in request.strategies
+    ]
+
+    portfolio_cfg = PortfolioConfig(
+        strategies=strategy_configs,
+        start_date=datetime.fromisoformat(request.start_date.replace("Z", "+00:00")) if request.start_date else None,
+        end_date=datetime.fromisoformat(request.end_date.replace("Z", "+00:00")) if request.end_date else None,
+        initial_capital=request.initial_capital,
+        commission_pct=request.commission_pct,
+        slippage_pct=request.slippage_pct,
+        leverage=request.leverage,
+        max_positions=request.max_positions,
+        max_sector_exposure=request.max_sector_exposure,
+        correlation_threshold=request.correlation_threshold,
+        correlation_reduction=request.correlation_reduction,
+        max_drawdown_pct=request.max_drawdown_pct,
+    )
+
+    # Run portfolio engine
+    candle_store = CandleStore()
+    engine = PortfolioEngine(candle_store=candle_store, exchange=request.exchange, timeframe=request.timeframe)
+
+    try:
+        result = await engine.run(portfolio_cfg)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Portfolio backtest failed: {str(e)}")
+
+    # Build response
+    return PortfolioResultResponse(
+        portfolio_metrics=result.portfolio_metrics.__dict__,
+        equity_curve=result.equity_curve[:50],
+        allocations=[
+            PortfolioAllocationRecord(
+                strategy=a.strategy,
+                symbol=a.symbol,
+                weight=a.weight,
+                return_pct=a.return_pct,
+                trades=a.trades,
+                sharpe=a.sharpe,
+            )
+            for a in result.allocations
+        ],
+        correlation_matrix=result.correlation_matrix,
+        max_correlation=result.max_correlation,
+        avg_correlation=result.avg_correlation,
+        max_drawdown_pct=result.max_drawdown_pct,
+        strategy_results=[
+            {
+                "strategy": strat_cfg[0].strategy_name,
+                "symbol": strat_symbol,
+                "total_return": sr.total_return,
+                "sharpe_ratio": sr.sharpe_ratio,
+                "sortino_ratio": sr.sortino_ratio,
+                "calmar_ratio": sr.calmar_ratio,
+                "max_drawdown_pct": sr.max_drawdown_pct,
+                "win_rate": sr.win_rate,
+                "profit_factor": sr.profit_factor,
+                "expectancy": sr.expectancy,
+                "trades": sr.total_trades,
+                "equity_curve": sr.equity_curve.get("curve", []) if sr.equity_curve else [],
+            }
+            for strat_cfg, strat_symbol, sr in zip(
+                [(sc, sym) for sc in strategy_configs for sym in sc.symbols],
+                [sym for sc in strategy_configs for sym in sc.symbols],
+                result.strategy_results
+            )
+        ],
+    )
