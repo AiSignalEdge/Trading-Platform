@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.database import init_db, close_db
 from core.redis import init_redis, close_redis
+from services.backtest.batch_engine import BatchEngine
 
 # API Routes
 from api.routes import strategies, backtest, portfolio, jobs, pairs, auth, ai, export, risk, health, data, websocket as ws_routes, signals
@@ -20,11 +21,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan — startup and shutdown."""
     await init_db()
     await init_redis()
-    print(f"\U0001f680 {settings.app_name} started")
+    await BatchEngine.initialize()
+    print(f"🚀 {settings.app_name} started")
     yield
+    await BatchEngine.shutdown()
     await close_db()
     await close_redis()
-    print("\U0001f44b Server shutdown complete")
+    print("👋 Server shutdown complete")
 
 
 def create_app() -> FastAPI:

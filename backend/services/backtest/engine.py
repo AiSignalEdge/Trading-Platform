@@ -298,7 +298,7 @@ class BacktestEngine:
             train_df = df.iloc[train_start:train_end]
             test_df = df.iloc[train_end:train_end + test_days]
 
-            if len(train_df) < 50 or len(test_df) < 20:
+            if len(train_df) < 20 or len(test_df) < 3:
                 continue
 
             close = test_df["close"].values
