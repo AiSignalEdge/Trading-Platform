@@ -149,6 +149,10 @@ class BacktestResult:
     testing_time: float
     is_walk_forward: bool
 
+    # Walk-forward train metrics (set on test_result by _run_walk_forward)
+    train_return: float = 0.0
+    train_sharpe: float = 0.0
+
     # Raw trade log
     trades: list[Trade] = field(default_factory=list)
 
@@ -294,18 +298,33 @@ class BacktestEngine:
         for i in range(n_windows):
             train_start = i * test_days
             train_end = train_start + train_days
+            test_end = train_end + test_days
 
             train_df = df.iloc[train_start:train_end]
-            test_df = df.iloc[train_end:train_end + test_days]
+            test_df = df.iloc[train_end:test_end]
+            combined_df = df.iloc[train_start:test_end]  # train + test for signal generation
 
             if len(train_df) < 20 or len(test_df) < 3:
                 continue
 
-            close = test_df["close"].values
-            entries, exits = self._generate_signals(close)
+            # Generate signals on COMBINED train+test data so indicators are warm
+            close_combined = combined_df["close"].values
+            entries_full, exits_full = self._generate_signals(close_combined)
 
-            pf = self._vbt.Portfolio.from_signals(
-                close=close,
+            # Slice to test period only (offset = len(train_df) in combined)
+            test_offset = len(train_df)
+            test_len = len(test_df)
+            entries = entries_full[test_offset:test_offset + test_len]
+            exits = exits_full[test_offset:test_offset + test_len]
+            close_test = test_df["close"].values
+
+            # Also run on train period for train_return
+            train_close = train_df["close"].values
+            entries_train, exits_train = self._generate_signals(train_close)
+
+            # Build test result (OOS)
+            pf_test = self._vbt.Portfolio.from_signals(
+                close=close_test,
                 entries=entries,
                 exits=exits,
                 size=self.config.max_position_size,
@@ -315,20 +334,53 @@ class BacktestEngine:
                 slippage=self.config.slippage,
                 freq=self._freq_map(self.config.timeframe),
             )
+            test_stats = pf_test.stats()
+            test_trades = pf_test.trades.records
 
-            stats = pf.stats()
-            trade_records = pf.trades.records
-
-            result = self._build_result(
+            test_result = self._build_result(
                 symbol=symbol,
-                stats=stats,
-                trade_records=trade_records,
+                stats=test_stats,
+                trade_records=test_trades,
                 df=test_df,
-                pf=pf,
+                pf=pf_test,
                 is_walk_forward=True,
             )
-            result.strategy_name = f"{self.config.strategy_name} [WF-{i+1}]"
-            results.append(result)
+            test_result.strategy_name = f"{self.config.strategy_name} [WF-{i+1} TEST]"
+            test_result.training_time = len(train_df)
+            test_result.testing_time = len(test_df)
+
+            # Build train result (in-sample)
+            pf_train = self._vbt.Portfolio.from_signals(
+                close=train_close,
+                entries=entries_train,
+                exits=exits_train,
+                size=self.config.max_position_size,
+                size_type="percent",
+                init_cash=self.config.initial_cash,
+                fees=self.config.commission,
+                slippage=self.config.slippage,
+                freq=self._freq_map(self.config.timeframe),
+            )
+            train_stats = pf_train.stats()
+            train_trades = pf_train.trades.records
+
+            train_result = self._build_result(
+                symbol=symbol,
+                stats=train_stats,
+                trade_records=train_trades,
+                df=train_df,
+                pf=pf_train,
+                is_walk_forward=True,
+            )
+            train_result.strategy_name = f"{self.config.strategy_name} [WF-{i+1} TRAIN]"
+            train_result.training_time = len(train_df)
+            train_result.testing_time = len(test_df)
+
+            # Store train_return on test_result so walk_forward_response can read it
+            test_result.train_return = train_result.total_return
+            test_result.train_sharpe = train_result.sharpe_ratio
+
+            results.append(test_result)
 
         return results
 

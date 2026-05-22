@@ -656,7 +656,7 @@ class PortfolioEngine:
 
         For each window:
           1. Run portfolio backtest on train period → get train_return, train_metrics, allocation, correlation
-          2. Run portfolio backtest on test period with same allocations → get test_return, test_metrics
+          2. Run portfolio backtest on test period with fixed allocation ratios from train period → get test_return, test_metrics
         """
         from datetime import timedelta
 
@@ -730,7 +730,24 @@ class PortfolioEngine:
 
         async def run_one_window(spec: dict):
             train_result = await self.run(spec["train_cfg"])
-            test_result = await self.run(spec["test_cfg"])
+            
+            # Extract per-strategy allocation weights from train period to freeze for test
+            alloc_by_strategy: dict[str, float] = {}
+            if train_result and train_result.allocations:
+                for a in train_result.allocations:
+                    alloc_by_strategy[a.strategy] = alloc_by_strategy.get(a.strategy, 0.0) + abs(a.weight)
+                total = sum(alloc_by_strategy.values())
+                if total > 0:
+                    for k in alloc_by_strategy:
+                        alloc_by_strategy[k] /= total
+            
+            # Override test_cfg strategy weights with train allocation ratios
+            test_cfg = spec["test_cfg"]
+            if alloc_by_strategy:
+                for strat_cfg in test_cfg.strategies:
+                    strat_cfg.weight = alloc_by_strategy.get(strat_cfg.strategy_name, strat_cfg.weight)
+            
+            test_result = await self.run(test_cfg)
             train_return = train_result.portfolio_metrics.total_return if train_result else 0.0
             test_return = test_result.portfolio_metrics.total_return if test_result else 0.0
             avg_corr = test_result.avg_correlation if test_result else 0.0

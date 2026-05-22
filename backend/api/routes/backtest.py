@@ -610,9 +610,9 @@ async def run_walk_forward(
     oos_sharpe_vals = []
 
     for r in results:
-        train_returns.append(getattr(r, 'training_return', None) or 0.0)
+        train_returns.append(getattr(r, 'train_return', None) or 0.0)
         test_returns.append(r.total_return or 0.0)
-        in_sample_sharpe_vals.append(r.sharpe_ratio or 0.0)
+        in_sample_sharpe_vals.append(getattr(r, 'train_sharpe', None) or r.sharpe_ratio or 0.0)
         oos_sharpe_vals.append(getattr(r, 'oos_sharpe_ratio', None) or r.sharpe_ratio or 0.0)
 
     avg_train = sum(train_returns) / len(train_returns) if train_returns else 0.0
@@ -633,11 +633,11 @@ async def run_walk_forward(
         progress_pct=100.0,
         completed_at=datetime.now(timezone.utc),
         results=[{
-            "train_return": float(getattr(r, 'training_return', None) or 0.0),
-            "test_return": float(r.total_return * 100) if r.total_return else 0.0,
+            "train_return": float(getattr(r, 'train_return', None) or 0.0),
+            "test_return": float(r.total_return) if r.total_return else 0.0,
             "total_return": float(r.total_return * 100) if r.total_return else 0.0,
             "total_return_pct": float(r.total_return_pct) if r.total_return_pct else 0.0,
-            "sharpe_ratio": float(r.sharpe_ratio) if r.sharpe_ratio else 0.0,
+            "sharpe_ratio": float(getattr(r, 'train_sharpe', None) or r.sharpe_ratio or 0.0),
             "max_drawdown_pct": float(r.max_drawdown_pct) if r.max_drawdown_pct else 0.0,
             "total_trades": int(r.total_trades) if r.total_trades else 0,
             "win_rate": float(r.win_rate) if r.win_rate else 0.0,
@@ -655,9 +655,9 @@ async def run_walk_forward(
         in_sample_sharpe=_to_py(sum(in_sample_sharpe_vals) / len(in_sample_sharpe_vals) if in_sample_sharpe_vals else None),
         out_of_sample_sharpe=_to_py(sum(oos_sharpe_vals) / len(oos_sharpe_vals) if oos_sharpe_vals else None),
         windows=[{
-            "train_return": _to_py(getattr(r, 'training_return', None)),
+            "train_return": _to_py(getattr(r, 'train_return', None)),
             "test_return": _to_py(r.total_return),
-            "sharpe": _to_py(r.sharpe_ratio),
+            "sharpe": _to_py(getattr(r, 'train_sharpe', None) or r.sharpe_ratio),
             "max_drawdown_pct": _to_py(r.max_drawdown_pct),
             "trades": _to_py(r.total_trades),
         } for r in results],
