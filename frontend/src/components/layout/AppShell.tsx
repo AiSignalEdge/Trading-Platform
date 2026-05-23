@@ -19,6 +19,7 @@ import {
   User,
   X,
   Menu,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/strategies", label: "Strategies", icon: GitBranch },
   { href: "/backtest", label: "Backtest", icon: BarChart3 },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
+  { href: "/automation", label: "Automation", icon: Clock },
   { href: "/automate", label: "Automate", icon: Zap },
   { href: "/compare", label: "Compare", icon: GitCompare },
   { href: "/risk", label: "Risk", icon: Shield },
