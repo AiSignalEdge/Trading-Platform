@@ -2,18 +2,23 @@
 FastAPI Application — Hermes Trading System.
 """
 
+import logging
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from core.database import init_db, close_db
 from core.redis import init_redis, close_redis
 from services.backtest.batch_engine import BatchEngine
+from services.scheduler import scheduler_service
 
 # API Routes
-from api.routes import strategies, backtest, portfolio, jobs, pairs, auth, ai, export, risk, health, data, websocket as ws_routes, signals
+from api.routes import strategies, backtest, portfolio, jobs, pairs, auth, ai, export, risk, health, data, websocket as ws_routes, signals, scheduler
 
 
 @asynccontextmanager
@@ -22,8 +27,16 @@ async def lifespan(app: FastAPI):
     await init_db()
     await init_redis()
     await BatchEngine.initialize()
+    scheduler_service.start()
+    # Load all enabled jobs from DB into APScheduler
+    try:
+        await scheduler_service._load_jobs_from_db()
+        logger.info("Loaded scheduled jobs from DB into APScheduler")
+    except Exception as e:
+        logger.warning(f"Could not load scheduled jobs from DB: {e}")
     print(f"🚀 {settings.app_name} started")
     yield
+    await scheduler_service.stop()
     await BatchEngine.shutdown()
     await close_db()
     await close_redis()
@@ -73,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(risk.router)
     app.include_router(data.router)
     app.include_router(signals.router)
+    app.include_router(scheduler.router)
     app.include_router(ws_routes.router, prefix="/ws", tags=["websocket"])
 
     return app
