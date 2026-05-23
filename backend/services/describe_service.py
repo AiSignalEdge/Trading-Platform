@@ -74,10 +74,10 @@ Parameters: {param_str}
 Entry Rules: {entry_desc}
 Exit Rules: {exit_desc}
 
-Stop Loss: {stop_loss_pct * 100:.1f}% if set, otherwise default 2%
-Take Profit: {take_profit_pct * 100:.1f}% if set, otherwise default 4%
-Max Position Size: {max_position_pct * 100:.1f}% of capital if set
-Risk Per Trade: {risk_per_trade_pct * 100:.1f}% of capital if set
+Stop Loss: {f'{stop_loss_pct * 100:.1f}%' if stop_loss_pct is not None else 'default 2%'}
+Take Profit: {f'{take_profit_pct * 100:.1f}%' if take_profit_pct is not None else 'default 4%'}
+Max Position Size: {f'{max_position_pct * 100:.1f}%' if max_position_pct is not None else 'default 100%'}
+Risk Per Trade: {f'{risk_per_trade_pct * 100:.1f}%' if risk_per_trade_pct is not None else 'default 2%'}
 
 Provide a clear, structured description that covers what this strategy does, how it enters/exits trades, and its risk profile."""
 
@@ -94,6 +94,7 @@ Provide a clear, structured description that covers what this strategy does, how
     headers = {
         "Authorization": f"Bearer {settings.anthropic_api_key}",
         "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
     }
     
     base_url = settings.anthropic_base_url.rstrip("/")
@@ -129,17 +130,15 @@ Provide a clear, structured description that covers what this strategy does, how
             logger.info(f"Successfully generated description for strategy: {strategy_name}")
             return description
             
-    except HTTPStatusError as e:
-        if e.response.status_code == 401:
-            raise ValueError("Invalid API key for MiniMax AI") from e
-        elif e.response.status_code == 429:
-            raise ValueError("MiniMax API rate limit exceeded") from e
-        else:
-            logger.error(f"HTTP error from MiniMax API: {e.response.status_code} - {e.response.text}")
-            raise ValueError(f"AI API error (HTTP {e.response.status_code}): {e.response.text}") from e
+    except httpx.TimeoutException:
+        logger.error(f"MiniMax API timed out after 60s")
+        raise ValueError("AI request timed out after 60 seconds. Please try again.")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"MiniMax HTTP error: {e.response.status_code}")
+        raise ValueError(f"AI service returned error (HTTP {e.response.status_code}). Please try again.") from e
     except Exception as e:
         logger.error(f"Unexpected error generating strategy description: {e}")
-        raise ValueError(f"Failed to generate strategy description: {str(e)}") from e
+        raise ValueError("Failed to generate strategy description. Please try again.") from e
 
 
 def _format_rules(rules: Optional[dict[str, Any]]) -> str:

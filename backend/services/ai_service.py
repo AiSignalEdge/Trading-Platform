@@ -78,6 +78,7 @@ Return a complete strategy definition as JSON."""
     headers = {
         "Authorization": f"Bearer {settings.anthropic_api_key}",
         "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
     }
     
     base_url = settings.anthropic_base_url.rstrip("/")
@@ -134,17 +135,12 @@ Return a complete strategy definition as JSON."""
             logger.info(f"Successfully generated strategy: {strategy_def.get('name')}")
             return strategy_def
             
-    except HTTPStatusError as e:
-        if e.response.status_code == 401:
-            raise ValueError("Invalid API key for MiniMax AI") from e
-        elif e.response.status_code == 429:
-            raise ValueError("MiniMax API rate limit exceeded") from e
-        else:
-            logger.error(f"HTTP error from MiniMax API: {e.response.status_code} - {e.response.text}")
-            raise ValueError(f"AI API error (HTTP {e.response.status_code}): {e.response.text}") from e
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse AI response as JSON: {e}")
-        raise ValueError("AI returned invalid JSON response") from e
+    except httpx.TimeoutException:
+        logger.error(f"MiniMax API timed out after 60s")
+        raise ValueError("AI request timed out after 60 seconds. Please try again.")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"MiniMax HTTP error: {e.response.status_code}")
+        raise ValueError(f"AI service returned error (HTTP {e.response.status_code}). Please try again.") from e
     except Exception as e:
         logger.error(f"Unexpected error calling MiniMax API: {e}")
-        raise ValueError(f"Failed to generate strategy: {str(e)}") from e
+        raise ValueError("Failed to generate strategy. Please try again.") from e

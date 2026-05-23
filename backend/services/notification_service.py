@@ -157,7 +157,7 @@ async def send_discord_webhook(
     url = webhook_url or settings.discord_webhook_url
     
     if not url:
-        raise ValueError("Discord not configured: DISCORD_WEBHOOK_URL required")
+        raise ValueError("Discord webhook not configured. Set DISCORD_WEBHOOK_URL in .env to enable Discord notifications.")
     
     # Discord webhooks have a max length of 2000 characters
     # Split into multiple messages if needed

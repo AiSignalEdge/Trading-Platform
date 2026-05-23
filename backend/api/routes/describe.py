@@ -118,7 +118,7 @@ async def describe_strategy_by_id(
         raise HTTPException(status_code=500, detail=f"Description generation failed: {str(e)}")
 
 
-@router.post("", response_model=DescribeResponse)
+@router.post("", response_model_exclude_none=True)
 async def describe_strategy_by_params(
     request: DescribeParamsRequest,
 ):
@@ -143,11 +143,13 @@ async def describe_strategy_by_params(
             risk_per_trade_pct=request.risk_per_trade_pct,
         )
         
-        return DescribeResponse(
-            strategy_id=None,
-            strategy_name=request.strategy_name,
-            description=description,
-        )
+        response_data = {
+            "strategy_name": request.strategy_name,
+            "description": description,
+        }
+        if False:  # strategy_id is always None for ad-hoc, skip it
+            response_data["strategy_id"] = None
+        return response_data
     except ValueError as e:
         logger.warning(f"Strategy description validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))

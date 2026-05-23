@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # AI Provider (Anthropic-compatible MiniMax API)
     anthropic_api_key: str = ""
-    anthropic_base_url: str = "https://api.minimax.chat"
+    anthropic_base_url: str = "https://api.minimax.io/anthropic"
 
     # Binance
     binance_api_key: str = ""
