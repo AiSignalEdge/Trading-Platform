@@ -310,7 +310,7 @@ _default_exchanges = [
     ExchangeConfig(
         exchange_id="binance",
         api_key=settings.binance_api_key or None,
-        api_secret=settings.binance_secret or None,
+        api_secret=settings.binance_api_secret or None,
         testnet=bool(settings.binance_testnet),
     ),
     ExchangeConfig(
