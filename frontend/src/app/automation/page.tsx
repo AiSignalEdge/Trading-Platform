@@ -23,6 +23,9 @@ import {
   Bell,
   Webhook,
   RotateCcw,
+  Moon,
+  Activity,
+  Layers,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -135,6 +138,150 @@ const CRON_PRESETS = [
   { label: "Every weekday", cron: "0 0 * * 1-5" },
 ];
 
+// ─── Loop Templates ───────────────────────────────────────────────────────────
+
+interface LoopTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  job_type: string;
+  payload: {
+    pairs: string[];
+    timeframes: string[];
+    strategy: string;
+    start_date?: string;
+    end_date?: string;
+    capital?: number;
+    max_positions?: number;
+    strategies?: Array<{ strategy: string; symbols: string[] }>;
+    train_days?: number;
+    test_days?: number;
+    skip_days?: number;
+  };
+  trigger_type: string;
+  trigger_config: Record<string, any>;
+}
+
+const TEMPLATES: LoopTemplate[] = [
+  {
+    id: "moon-phase",
+    name: "Moon Phase Trading",
+    description: "RSI mean-reversion timed to lunar cycles. Run weekly.",
+    icon: "Moon",
+    color: "purple",
+    job_type: "backtest",
+    payload: {
+      pairs: ["BTC/USDT", "ETH/USDT"],
+      timeframes: ["4h"],
+      strategy: "rsi",
+      start_date: (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10); })(),
+      end_date: new Date().toISOString().slice(0, 10),
+      capital: 10000,
+    },
+    trigger_type: "cron",
+    trigger_config: { expression: "0 0 * * 1" },
+  },
+  {
+    id: "trend-rider",
+    name: "Trend Rider",
+    description: "MA crossover trend follower. Run daily before market open.",
+    icon: "TrendingUp",
+    color: "blue",
+    job_type: "backtest",
+    payload: {
+      pairs: ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+      timeframes: ["4h"],
+      strategy: "ma_cross",
+      start_date: (() => { const d = new Date(); d.setDate(d.getDate() - 60); return d.toISOString().slice(0, 10); })(),
+      end_date: new Date().toISOString().slice(0, 10),
+      capital: 10000,
+    },
+    trigger_type: "cron",
+    trigger_config: { expression: "0 2 * * *" },
+  },
+  {
+    id: "bollinger-breakout",
+    name: "Bollinger Breakout",
+    description: "Bollinger Bands breakout. Check every 6 hours.",
+    icon: "Activity",
+    color: "amber",
+    job_type: "backtest",
+    payload: {
+      pairs: ["BTC/USDT"],
+      timeframes: ["1h"],
+      strategy: "bollinger",
+      start_date: (() => { const d = new Date(); d.setDate(d.getDate() - 60); return d.toISOString().slice(0, 10); })(),
+      end_date: new Date().toISOString().slice(0, 10),
+      capital: 10000,
+    },
+    trigger_type: "interval",
+    trigger_config: { hours: 6 },
+  },
+  {
+    id: "macd-momentum",
+    name: "MACD Momentum",
+    description: "MACD momentum strategy. Run daily at market open.",
+    icon: "Zap",
+    color: "green",
+    job_type: "backtest",
+    payload: {
+      pairs: ["BTC/USDT", "ETH/USDT"],
+      timeframes: ["1d"],
+      strategy: "macd",
+      start_date: (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10); })(),
+      end_date: new Date().toISOString().slice(0, 10),
+      capital: 10000,
+    },
+    trigger_type: "cron",
+    trigger_config: { expression: "0 8 * * *" },
+  },
+  {
+    id: "multi-strategy-portfolio",
+    name: "Multi-Strategy Portfolio",
+    description: "Diversified multi-strategy portfolio. Run weekly.",
+    icon: "Layers",
+    color: "cyan",
+    job_type: "portfolio",
+    payload: {
+      pairs: [],
+      timeframes: ["4h"],
+      strategy: "",
+      capital: 10000,
+      max_positions: 3,
+      strategies: [
+        { strategy: "ma_cross", symbols: ["BTC/USDT"] },
+        { strategy: "rsi", symbols: ["ETH/USDT"] },
+        { strategy: "bollinger", symbols: ["SOL/USDT"] },
+      ],
+    },
+    trigger_type: "cron",
+    trigger_config: { expression: "0 3 * * 1" },
+  },
+  {
+    id: "walk-forward-optimization",
+    name: "Walk-Forward Optimization",
+    description: "Rolling walk-forward analysis. Run monthly.",
+    icon: "GitBranch",
+    color: "orange",
+    job_type: "walk-forward",
+    payload: {
+      pairs: ["BTC/USDT"],
+      timeframes: ["4h"],
+      strategy: "ma_cross",
+      train_days: 30,
+      test_days: 7,
+      skip_days: 3,
+      start_date: (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toISOString().slice(0, 10); })(),
+      end_date: new Date().toISOString().slice(0, 10),
+      capital: 10000,
+    },
+    trigger_type: "cron",
+    trigger_config: { expression: "0 4 1 * *" },
+  },
+];
+
 // ─── Step Indicator ───────────────────────────────────────────────────────────
 
 function StepIndicator({ current, total, labels }: { current: number; total: number; labels: string[] }) {
@@ -176,8 +323,9 @@ interface NewJobModalProps {
 
 function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
   const [step, setStep] = useState(1);
-  const TOTAL_STEPS = 5;
-  const STEP_LABELS = ["Job Type", "Config", "Schedule", "Notify", "Review"];
+  const TOTAL_STEPS = 6;
+  const STEP_LABELS = ["Template", "Job Type", "Config", "Schedule", "Notify", "Review"];
+  const [selectedTemplate, setSelectedTemplate] = useState<LoopTemplate | null>(null);
 
   // Step 1: Job Type
   const [jobType, setJobType] = useState<string>("backtest");
@@ -237,7 +385,8 @@ function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
   });
 
   const handleClose = () => {
-    setStep(1);
+    setStep(0);
+    setSelectedTemplate(null);
     setJobType("backtest");
     setPairs(["BTC/USDT"]);
     setTimeframes(["4h"]);
@@ -326,6 +475,73 @@ function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
 
   if (!open) return null;
 
+  // ─── Template Step (0) ────────────────────────────────────────────────────
+
+  const TemplateStep = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <Layers size={18} className="text-primary" />
+        Choose a Template
+      </h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {TEMPLATES.map((tmpl) => (
+          <button
+            key={tmpl.id}
+            onClick={() => {
+              setSelectedTemplate(tmpl);
+              setJobType(tmpl.job_type);
+              setPairs(tmpl.payload.pairs);
+              setTimeframes(tmpl.payload.timeframes);
+              setStrategy(tmpl.payload.strategy || "");
+              if (tmpl.payload.start_date) setStartDate(tmpl.payload.start_date);
+              if (tmpl.payload.end_date) setEndDate(tmpl.payload.end_date);
+              if (tmpl.payload.capital) setInitialCapital(tmpl.payload.capital);
+              if (tmpl.payload.max_positions) setMaxPositions(tmpl.payload.max_positions);
+              if (tmpl.payload.strategies) {
+                setPortfolioStrategies(tmpl.payload.strategies.map((s, i) => ({ id: i + 1, strategy: s.strategy, symbols: s.symbols })));
+              }
+              if (tmpl.job_type === "walk-forward") {
+                if (tmpl.payload.train_days) setTrainDays(tmpl.payload.train_days);
+                if (tmpl.payload.test_days) setTestDays(tmpl.payload.test_days);
+                if (tmpl.payload.skip_days) setSkipDays(tmpl.payload.skip_days);
+              }
+              if (tmpl.trigger_type === "interval") {
+                setTriggerType("interval");
+                setIntervalHours(tmpl.trigger_config.hours || 24);
+              } else {
+                setTriggerType("cron");
+                setCronExpr(tmpl.trigger_config.expression || "0 2 * * *");
+              }
+              setStep(1);
+            }}
+            className="text-left p-4 rounded-lg border border-white/10 hover:border-white/30 transition-all bg-white/5 hover:bg-white/10"
+          >
+            <div className={`w-10 h-10 rounded-lg bg-${tmpl.color}-500/20 flex items-center justify-center mb-3`}>
+              {tmpl.icon === "Moon" && <Moon className={`w-5 h-5 text-${tmpl.color}-400`} />}
+              {tmpl.icon === "TrendingUp" && <TrendingUp className={`w-5 h-5 text-${tmpl.color}-400`} />}
+              {tmpl.icon === "Activity" && <Activity className={`w-5 h-5 text-${tmpl.color}-400`} />}
+              {tmpl.icon === "Zap" && <Zap className={`w-5 h-5 text-${tmpl.color}-400`} />}
+              {tmpl.icon === "Layers" && <Layers className={`w-5 h-5 text-${tmpl.color}-400`} />}
+              {tmpl.icon === "GitBranch" && <GitBranch className={`w-5 h-5 text-${tmpl.color}-400`} />}
+            </div>
+            <div className="font-medium text-white mb-1">{tmpl.name}</div>
+            <div className="text-xs text-gray-400">{tmpl.description}</div>
+          </button>
+        ))}
+      </div>
+      <div className="text-center pt-2">
+        <span className="text-xs text-gray-500">Or </span>
+        <button
+          type="button"
+          onClick={() => { setSelectedTemplate(null); setStep(1); }}
+          className="text-xs text-blue-400 hover:text-blue-300"
+        >
+          start from scratch
+        </button>
+      </div>
+    </div>
+  );
+
   // ─── Step 1: Job Type ─────────────────────────────────────────────────────
 
   const Step1 = () => (
@@ -333,6 +549,11 @@ function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
       <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
         <Zap size={18} className="text-primary" />
         Select Job Type
+        {selectedTemplate && (
+          <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded ml-2">
+            {selectedTemplate.name}
+          </span>
+        )}
       </h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {JOB_TYPES.map((jt) => (
@@ -887,6 +1108,7 @@ function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 pb-4">
+          {step === 0 && <TemplateStep />}
           {step === 1 && <Step1 />}
           {step === 2 && <Step2 />}
           {step === 3 && <Step3 />}
@@ -905,8 +1127,8 @@ function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
         <div className="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
           <button
             type="button"
-            onClick={() => setStep((s) => Math.max(1, s - 1))}
-            disabled={step === 1}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            disabled={step === 0}
             className="px-4 py-2 rounded-lg border border-border text-text-secondary text-sm disabled:opacity-40 hover:border-primary/50 hover:text-primary transition-all"
           >
             Back
