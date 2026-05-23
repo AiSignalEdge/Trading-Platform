@@ -195,7 +195,7 @@ class BayesianOptimizer:
         return self._sample_random_parameters()
 
 
-async def _run_backtest(
+def _run_backtest_sync(
     strategy_name: str,
     symbols: list[str],
     timeframe: str,
@@ -205,19 +205,7 @@ async def _run_backtest(
     capital: float,
 ) -> dict[str, Any]:
     """
-    Run a backtest with given parameters and return metrics.
-
-    Args:
-        strategy_name: Name of the strategy to test
-        symbols: List of trading symbols
-        timeframe: Timeframe (e.g., "4h", "1d")
-        start_date: Start date string
-        end_date: End date string
-        params: Strategy parameters to test
-        capital: Initial capital
-
-    Returns:
-        Dict with backtest metrics including target metric
+    Synchronous wrapper for BacktestEngine.run() - runs CPU-bound work in a thread.
     """
     from datetime import datetime
 
@@ -234,7 +222,7 @@ async def _run_backtest(
     )
 
     engine = BacktestEngine(config)
-    results = await engine.run()
+    results = engine.run()  # synchronous
 
     if not results:
         return {
@@ -258,6 +246,32 @@ async def _run_backtest(
         "trades": result.total_trades,
         "expectancy": result.expectancy,
     }
+
+
+async def _run_backtest(
+    strategy_name: str,
+    symbols: list[str],
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    params: dict[str, float],
+    capital: float,
+) -> dict[str, Any]:
+    """
+    Run a backtest with given parameters and return metrics.
+    Wraps the synchronous _run_backtest_sync in a thread to avoid blocking the event loop.
+    """
+    metrics = await asyncio.to_thread(
+        _run_backtest_sync,
+        strategy_name,
+        symbols,
+        timeframe,
+        start_date,
+        end_date,
+        params,
+        capital,
+    )
+    return metrics
 
 
 async def _evaluate_parameters(
@@ -336,6 +350,11 @@ async def optimize_strategy_parameters(
     Returns:
         Dict with best parameters, score, and optimization history
     """
+    if n_initial < 1:
+        raise ValueError("n_initial must be at least 1")
+    if n_iterations < 0:
+        raise ValueError("n_iterations must be non-negative")
+
     logger.info(f"Starting Bayesian optimization for {strategy_name}")
     logger.info(f"Search space: {search_space}")
     logger.info(f"Target metric: {target_metric}, n_initial={n_initial}, n_iterations={n_iterations}")
@@ -353,26 +372,20 @@ async def optimize_strategy_parameters(
         params = optimizer.suggest_next_random()
         logger.info(f"  Initial eval {i+1}/{n_initial}: {params}")
 
-        score = await _evaluate_parameters(
-            strategy_name=strategy_name,
-            symbols=symbols,
-            timeframe=timeframe,
-            start_date=start_date,
-            end_date=end_date,
-            params=params,
-            capital=capital,
-            target_metric=target_metric,
-        )
-
-        metrics = await _run_backtest(
-            strategy_name=strategy_name,
-            symbols=symbols,
-            timeframe=timeframe,
-            start_date=start_date,
-            end_date=end_date,
-            params=params,
-            capital=capital,
-        )
+        try:
+            score = await _evaluate_parameters(
+                strategy_name=strategy_name,
+                symbols=symbols,
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                params=params,
+                capital=capital,
+                target_metric=target_metric,
+            )
+        except Exception as e:
+            logger.warning(f"  Evaluation failed for {params}: {e}")
+            score = -1e8
 
         optimizer.X_observed.append(params)
         optimizer.y_observed.append(score)
@@ -380,7 +393,6 @@ async def optimize_strategy_parameters(
         evaluations.append({
             "parameters": params,
             "score": score,
-            "metrics": metrics,
         })
 
         if score > best_score:
@@ -400,26 +412,20 @@ async def optimize_strategy_parameters(
         params = await optimizer._suggest_next_parameters_ei()
         logger.info(f"  BO eval {i+1}/{n_iterations}: {params}")
 
-        score = await _evaluate_parameters(
-            strategy_name=strategy_name,
-            symbols=symbols,
-            timeframe=timeframe,
-            start_date=start_date,
-            end_date=end_date,
-            params=params,
-            capital=capital,
-            target_metric=target_metric,
-        )
-
-        metrics = await _run_backtest(
-            strategy_name=strategy_name,
-            symbols=symbols,
-            timeframe=timeframe,
-            start_date=start_date,
-            end_date=end_date,
-            params=params,
-            capital=capital,
-        )
+        try:
+            score = await _evaluate_parameters(
+                strategy_name=strategy_name,
+                symbols=symbols,
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                params=params,
+                capital=capital,
+                target_metric=target_metric,
+            )
+        except Exception as e:
+            logger.warning(f"  Evaluation failed for {params}: {e}")
+            score = -1e8
 
         optimizer.X_observed.append(params)
         optimizer.y_observed.append(score)
@@ -427,7 +433,6 @@ async def optimize_strategy_parameters(
         evaluations.append({
             "parameters": params,
             "score": score,
-            "metrics": metrics,
         })
 
         if score > best_score:

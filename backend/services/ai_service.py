@@ -107,12 +107,19 @@ Return a complete strategy definition as JSON."""
                 if block.get("type") == "text":
                     text_content = block.get("text", "")
                     break
-            
+
             if not text_content:
                 raise ValueError("No text content in AI response")
-            
+
+            # Strip markdown fences if present (model sometimes returns ```json ... ```)
+            text = text_content.strip()
+            if text.startswith("```"):
+                # Remove triple backtick fence and optional language tag
+                text = text.split("```", 2)[2]  # remove first fence and everything before
+            text = text.strip()
+
             # Parse the JSON from the model's output
-            strategy_def = json.loads(text_content)
+            strategy_def = json.loads(text)
             
             # Validate required fields
             required_fields = ["name", "description", "strategy_type", "parameters", "entry_rules", "exit_rules"]

@@ -164,6 +164,15 @@ interface LoopTemplate {
   trigger_config: Record<string, any>;
 }
 
+const colorClasses: Record<string, { bg: string; text: string }> = {
+  purple: { bg: "bg-purple-500/20", text: "text-purple-400" },
+  blue: { bg: "bg-blue-500/20", text: "text-blue-400" },
+  amber: { bg: "bg-amber-500/20", text: "text-amber-400" },
+  green: { bg: "bg-green-500/20", text: "text-green-400" },
+  cyan: { bg: "bg-cyan-500/20", text: "text-cyan-400" },
+  orange: { bg: "bg-orange-500/20", text: "text-orange-400" },
+};
+
 const TEMPLATES: LoopTemplate[] = [
   {
     id: "moon-phase",
@@ -516,13 +525,13 @@ function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
             }}
             className="text-left p-4 rounded-lg border border-white/10 hover:border-white/30 transition-all bg-white/5 hover:bg-white/10"
           >
-            <div className={`w-10 h-10 rounded-lg bg-${tmpl.color}-500/20 flex items-center justify-center mb-3`}>
-              {tmpl.icon === "Moon" && <Moon className={`w-5 h-5 text-${tmpl.color}-400`} />}
-              {tmpl.icon === "TrendingUp" && <TrendingUp className={`w-5 h-5 text-${tmpl.color}-400`} />}
-              {tmpl.icon === "Activity" && <Activity className={`w-5 h-5 text-${tmpl.color}-400`} />}
-              {tmpl.icon === "Zap" && <Zap className={`w-5 h-5 text-${tmpl.color}-400`} />}
-              {tmpl.icon === "Layers" && <Layers className={`w-5 h-5 text-${tmpl.color}-400`} />}
-              {tmpl.icon === "GitBranch" && <GitBranch className={`w-5 h-5 text-${tmpl.color}-400`} />}
+            <div className={`w-10 h-10 rounded-lg ${colorClasses[tmpl.color].bg} flex items-center justify-center mb-3`}>
+              {tmpl.icon === "Moon" && <Moon className={`w-5 h-5 ${colorClasses[tmpl.color].text}`} />}
+              {tmpl.icon === "TrendingUp" && <TrendingUp className={`w-5 h-5 ${colorClasses[tmpl.color].text}`} />}
+              {tmpl.icon === "Activity" && <Activity className={`w-5 h-5 ${colorClasses[tmpl.color].text}`} />}
+              {tmpl.icon === "Zap" && <Zap className={`w-5 h-5 ${colorClasses[tmpl.color].text}`} />}
+              {tmpl.icon === "Layers" && <Layers className={`w-5 h-5 ${colorClasses[tmpl.color].text}`} />}
+              {tmpl.icon === "GitBranch" && <GitBranch className={`w-5 h-5 ${colorClasses[tmpl.color].text}`} />}
             </div>
             <div className="font-medium text-white mb-1">{tmpl.name}</div>
             <div className="text-xs text-gray-400">{tmpl.description}</div>
