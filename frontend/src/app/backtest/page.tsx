@@ -182,7 +182,7 @@ async function runPortfolioWalkForward(payload: {
 
 // ─── Step components ───────────────────────────────────────────────────────
 
-function StepIndicator({ current, total }: { current: number; total: number }) {
+function StepIndicator({ current, total, labels }: { current: number; total: number; labels?: string[] }) {
   return (
     <div className="flex items-center gap-2 mb-6">
       {Array.from({ length: total }, (_, i) => {
@@ -198,6 +198,9 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
             >
               {done ? <CheckCircle2 size={16} /> : num}
             </div>
+            {labels && labels[i] && (
+              <span className="text-xs text-slate-400 hidden sm:inline">{labels[i]}</span>
+            )}
             {i < total - 1 && (
               <div className={`w-12 h-0.5 ${done ? "bg-emerald-500" : "bg-[#1e1e2e]"}`} />
             )}
@@ -1375,17 +1378,27 @@ export default function BacktestPage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
+      <div className="flex items-center justify-between mb-6">
+      <div>
         <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-bold text-white flex items-center gap-3 outline-none">
           <BarChart3 size={24} className="text-blue-400" />
           Backtest Runner
         </h1>
         <p className="text-slate-400 text-sm mt-1">Configure and run event-driven backtests with full metrics</p>
       </div>
+      <div className="flex items-center gap-3">
+        <a
+          href="/backtest"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#1e1e2e] text-slate-400 hover:text-white hover:border-slate-500 transition-all text-sm"
+        >
+          ← New Backtest
+        </a>
+      </div>
+    </div>
 
       {step < 6 && (
         <>
-          <StepIndicator current={step} total={mode === "portfolio" ? 3 : (step === 0 ? 1 : step + 1)} />
+          <StepIndicator current={step} total={mode === "portfolio" ? 3 : (step === 0 ? 1 : step + 1)} labels={STEP_LABELS} />
 
           {/* Step 0: Mode Selection - always visible first */}
           {step === 0 && (

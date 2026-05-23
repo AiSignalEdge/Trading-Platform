@@ -416,6 +416,21 @@ async def run_backtest_now(
     )
 
 
+@router.get("/", response_model=list[BacktestResultResponse])
+async def list_backtests(
+    limit: int = Query(20, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List recent backtest results.
+    """
+    result = await db.execute(
+        select(BacktestResult).order_by(BacktestResult.completed_at.desc().nullslast()).limit(limit)
+    )
+    backtests = result.scalars().all()
+    return [BacktestResultResponse.model_validate(bt) for bt in backtests]
+
+
 @router.get("/{backtest_id}", response_model=BacktestResultResponse)
 async def get_backtest_result(
     backtest_id: UUID,
