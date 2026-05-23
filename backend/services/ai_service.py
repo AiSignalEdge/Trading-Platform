@@ -114,9 +114,13 @@ Return a complete strategy definition as JSON."""
             # Strip markdown fences if present (model sometimes returns ```json ... ```)
             text = text_content.strip()
             if text.startswith("```"):
-                # Remove triple backtick fence and optional language tag
-                text = text.split("```", 2)[2]  # remove first fence and everything before
-            text = text.strip()
+                # Remove opening fence: ```json or ``` — take everything after the first line
+                lines = text.split("\n")
+                text = "\n".join(lines[1:])  # skip ```json line
+                # Remove closing ``` if present
+                text = text.rstrip()
+                if text.endswith("```"):
+                    text = text[:-3].rstrip()
 
             # Parse the JSON from the model's output
             strategy_def = json.loads(text)
