@@ -2217,12 +2217,12 @@ class AIStrategyGenerator:
 - [x] Per-strategy independent signal generation with shared capital pool
 - [x] Portfolio results: per-strategy breakdown + aggregate metrics + allocation chart
 - [ ] Frontend portfolio mode toggle in wizard (Phase 3.5 frontend)
-- [ ] Walk-forward for portfolio mode
+- [x] Walk-forward for portfolio mode
 
 ### Phase 5: Automation + AI (Week 5–6)
-- [ ] APScheduler integration
-- [ ] Job CRUD API
-- [ ] Scheduler UI (cron builder, presets)
+- [x] APScheduler integration
+- [x] Job CRUD API
+- [x] Scheduler UI (cron builder, presets)
 - [ ] Loop templates (Moon Phase, Trend Following, etc.)
 - [ ] Claude API integration (AI strategy generator)
 - [ ] AI parameter optimizer (Bayesian)
