@@ -464,6 +464,15 @@ class SchedulerService:
         if webhook_url:
             asyncio.create_task(self._send_webhook(webhook_url, exec_record, db_job))
 
+        # Send Telegram/Discord notification if configured
+        from services.notification_service import send_job_completion_notification
+        asyncio.create_task(send_job_completion_notification(
+            job_name=db_job.name,
+            status=exec_record.status,
+            duration_seconds=(exec_record.finished_at - exec_record.started_at).total_seconds() if exec_record.finished_at else None,
+            error_message=exec_record.error,
+        ))
+
     async def _dispatch_execution(self, db_job) -> str:
         """Dispatch execution to the appropriate engine based on job type."""
         job_type = db_job.job_type

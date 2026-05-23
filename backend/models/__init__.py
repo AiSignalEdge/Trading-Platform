@@ -11,6 +11,7 @@ from .backtest import BacktestConfig, BacktestResult
 from .order import Order
 from .position import Position
 from .job import AutomatedJob, MarketRegime
+from .scheduler_job import ScheduledJob
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "Position",
     "AutomatedJob",
     "MarketRegime",
+    "ScheduledJob",
 ]

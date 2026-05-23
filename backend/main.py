@@ -18,7 +18,7 @@ from services.backtest.batch_engine import BatchEngine
 from services.scheduler import scheduler_service
 
 # API Routes
-from api.routes import strategies, backtest, portfolio, jobs, pairs, auth, ai, export, risk, health, data, websocket as ws_routes, signals, scheduler
+from api.routes import strategies, backtest, portfolio, jobs, pairs, auth, ai, export, risk, health, data, websocket as ws_routes, signals, scheduler, describe, notifications
 
 
 @asynccontextmanager
@@ -87,6 +87,8 @@ def create_app() -> FastAPI:
     app.include_router(data.router)
     app.include_router(signals.router)
     app.include_router(scheduler.router)
+    app.include_router(describe.router)
+    app.include_router(notifications.router)
     app.include_router(ws_routes.router, prefix="/ws", tags=["websocket"])
 
     return app

@@ -331,7 +331,7 @@ interface NewJobModalProps {
 }
 
 function NewJobModal({ open, onClose, onCreated }: NewJobModalProps) {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0);
   const TOTAL_STEPS = 6;
   const STEP_LABELS = ["Template", "Job Type", "Config", "Schedule", "Notify", "Review"];
   const [selectedTemplate, setSelectedTemplate] = useState<LoopTemplate | null>(null);

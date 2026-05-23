@@ -1,5 +1,6 @@
 """Alembic migration environment."""
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -7,11 +8,18 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# Load .env directly for migration
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 from core.config import settings
 from core.database import Base
 from models import Base as ModelsBase  # noqa: F401 — imports trigger table registration
 
 config = context.config
+
+# Override sqlalchemy.url from .env settings
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

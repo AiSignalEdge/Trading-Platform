@@ -18,19 +18,13 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
-    redis_password: str = ""
     redis_max_connections: int = 50
 
-    # JWT
-    secret_key: str = "dev-secret-key-change-in-production"
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 1440
-
-    # Anthropic/MiniMax LLM
-    anthropic_base_url: str = "https://api.minimax.io/anthropic"
+    # AI Provider (Anthropic-compatible MiniMax API)
     anthropic_api_key: str = ""
+    anthropic_base_url: str = "https://api.minimax.chat"
 
-    # Exchange
+    # Binance
     binance_api_key: str = ""
     binance_api_secret: str = ""
     binance_testnet: bool = True
@@ -43,6 +37,11 @@ class Settings(BaseSettings):
     # Kraken
     kraken_api_key: str = ""
     kraken_secret: str = ""
+
+    # Notification Settings
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    discord_webhook_url: str = ""
 
     # App Config
     host: str = "0.0.0.0"
