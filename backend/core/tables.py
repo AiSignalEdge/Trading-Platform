@@ -49,3 +49,47 @@ market_regimes_table = Table(
     Index("ix_market_regimes_pair", "pair"),
     extend_existing=True,
 )
+
+
+# ─── Execution Orders ─────────────────────────────────────────────────────────
+
+orders_table = Table(
+    "orders",
+    Base.metadata,
+    Column("id", UUID, primary_key=True),
+    Column("strategy_id", UUID, nullable=False),
+    Column("symbol", String(20), nullable=False),
+    Column("side", String(10), nullable=False),
+    Column("order_type", String(10), nullable=False),
+    Column("quantity", Float, nullable=False),
+    Column("price", Float, nullable=True),
+    Column("filled_quantity", Float, nullable=False, default=0.0),
+    Column("avg_fill_price", Float, nullable=False, default=0.0),
+    Column("status", String(20), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("filled_at", DateTime(timezone=True), nullable=True),
+    Index("ix_orders_strategy_id", "strategy_id"),
+    Index("ix_orders_symbol", "symbol"),
+    extend_existing=True,
+)
+
+
+# ─── Execution Positions ──────────────────────────────────────────────────────
+
+positions_table = Table(
+    "positions",
+    Base.metadata,
+    Column("id", UUID, primary_key=True),
+    Column("strategy_id", UUID, nullable=False),
+    Column("symbol", String(20), nullable=False),
+    Column("side", String(10), nullable=False),
+    Column("quantity", Float, nullable=False),
+    Column("entry_price", Float, nullable=False),
+    Column("current_price", Float, nullable=False),
+    Column("unrealized_pnl", Float, nullable=False, default=0.0),
+    Column("realized_pnl", Float, nullable=False, default=0.0),
+    Column("opened_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Index("ix_positions_strategy_id", "strategy_id"),
+    extend_existing=True,
+)

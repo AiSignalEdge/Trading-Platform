@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Binance Exchange (CCXT)
     binance_api_key: str = ""
+    binance_secret: str = ""
     binance_api_secret: str = ""
     binance_testnet: bool = True
 
