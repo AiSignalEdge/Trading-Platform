@@ -1468,8 +1468,10 @@ export default function BacktestPage() {
 
           {/* Portfolio Flow */}
           {mode === "portfolio" && step === 1 && (
-            <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
-              <PortfolioBuilderStep />
+            <form onSubmit={async (e) => { e.preventDefault(); await next(); }}>
+              <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl p-6">
+                <PortfolioBuilderStep />
+              </div>
               <div className="flex items-center justify-between mt-4">
                 <button
                   type="button"
@@ -1480,14 +1482,13 @@ export default function BacktestPage() {
                 </button>
                 <div className="text-slate-500 text-sm">Portfolio Builder</div>
                 <button
-                  type="button"
-                  onClick={next}
+                  type="submit"
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
                 >
                   Next <ChevronRight size={16} />
                 </button>
               </div>
-            </div>
+            </form>
           )}
 
           {mode === "portfolio" && step === 2 && (

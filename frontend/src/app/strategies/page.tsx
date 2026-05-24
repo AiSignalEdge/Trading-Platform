@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Plus, Filter, ArrowUpDown, TrendingUp, TrendingDown } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 interface Strategy {
@@ -149,9 +150,12 @@ function MetricBadge({ label, value, positive }: { label: string; value: string;
 }
 
 export default function StrategiesPage() {
+  const router = useRouter();
   const [filter, setFilter] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState("all");
   const [sortBy, setSortBy] = React.useState<"return" | "sharpe" | "winRate">("return");
+  const [editingStrategy, setEditingStrategy] = React.useState<Strategy | null>(null);
+  const [creatingStrategy, setCreatingStrategy] = React.useState(false);
 
   const filteredStrategies = mockStrategies
     .filter((s) => {
@@ -175,7 +179,7 @@ export default function StrategiesPage() {
           <h1 className="text-2xl font-bold text-text-primary">Strategy Library</h1>
           <p className="text-text-secondary">{mockStrategies.length} strategies configured</p>
         </div>
-        <Button size="sm">
+        <Button size="sm" onClick={() => setCreatingStrategy(true)}>
           <Plus className="mr-2 h-4 w-4" />
           New Strategy
         </Button>
@@ -290,10 +294,10 @@ export default function StrategiesPage() {
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
                 <span className="text-xs text-text-muted">{strategy.trades} trades</span>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" onClick={() => setEditingStrategy(strategy)}>
                     Edit
                   </Button>
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" onClick={() => router.push(`/automation?strategy=${strategy.id}`)}>
                     Run
                   </Button>
                 </div>
@@ -317,6 +321,62 @@ export default function StrategiesPage() {
           >
             Clear Filters
           </Button>
+        </div>
+      )}
+
+      {/* Edit Strategy Modal */}
+      {editingStrategy && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditingStrategy(null)}>
+          <div className="bg-card rounded-xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold text-text-primary mb-4">Edit Strategy</h2>
+            <p className="text-text-secondary mb-4">Editing: <span className="font-medium text-text-primary">{editingStrategy.name}</span></p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-text-secondary">Name</label>
+                <Input defaultValue={editingStrategy.name} />
+              </div>
+              <div>
+                <label className="text-sm text-text-secondary">Type</label>
+                <Input defaultValue={editingStrategy.type} />
+              </div>
+              <div>
+                <label className="text-sm text-text-secondary">Pair</label>
+                <Input defaultValue={editingStrategy.pair} />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <Button variant="outline" onClick={() => setEditingStrategy(null)}>Cancel</Button>
+              <Button onClick={() => { alert(`Strategy "${editingStrategy.name}" updated!`); setEditingStrategy(null); }}>Save Changes</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Strategy Modal */}
+      {creatingStrategy && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setCreatingStrategy(false)}>
+          <div className="bg-card rounded-xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold text-text-primary mb-4">Create New Strategy</h2>
+            <p className="text-text-secondary mb-4">Strategy creation coming soon! This feature is under development.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-text-secondary">Strategy Name</label>
+                <Input placeholder="e.g., MA Crossover BTC" />
+              </div>
+              <div>
+                <label className="text-sm text-text-secondary">Type</label>
+                <Input placeholder="e.g., Trend Following" />
+              </div>
+              <div>
+                <label className="text-sm text-text-secondary">Trading Pair</label>
+                <Input placeholder="e.g., BTC/USDT" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <Button variant="outline" onClick={() => setCreatingStrategy(false)}>Cancel</Button>
+              <Button onClick={() => { alert("Strategy creation coming soon!"); setCreatingStrategy(false); }}>Create Strategy</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useLivePrices } from "@/hooks/useMarketData";
 
 const SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "AVAX/USDT", "BNB/USDT"];
 
 export default function HomePage() {
+  const router = useRouter();
   const { prices } = useLivePrices();
+  const [timeframe, setTimeframe] = useState("1D");
 
   // Build display list — use live price if available, otherwise skip
   const displayPrices = SYMBOLS.map((pair) => {
@@ -59,10 +62,16 @@ export default function HomePage() {
               </p>
             </div>
             <div className="flex gap-3">
-              <button className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:opacity-90">
+              <button
+                onClick={() => router.push("/strategies")}
+                className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:opacity-90"
+              >
                 + New Strategy
               </button>
-              <button className="px-4 py-2 bg-surface border border-border rounded-lg text-sm text-text-secondary hover:bg-hover">
+              <button
+                onClick={() => router.push("/backtest")}
+                className="px-4 py-2 bg-surface border border-border rounded-lg text-sm text-text-secondary hover:bg-hover"
+              >
                 Run Backtest
               </button>
             </div>
@@ -111,8 +120,9 @@ export default function HomePage() {
                   {["1D", "1W", "1M", "ALL"].map((t) => (
                     <button
                       key={t}
+                      onClick={() => setTimeframe(t)}
                       className={`px-3 py-1 rounded text-xs font-medium ${
-                        t === "1M"
+                        t === timeframe
                           ? "bg-accent text-white"
                           : "text-text-muted hover:bg-hover"
                       }`}

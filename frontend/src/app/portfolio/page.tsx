@@ -131,10 +131,93 @@ function CreatePortfolioModal({ onClose, onCreate }: { onClose: () => void; onCr
   );
 }
 
+function EditPortfolioModal({ portfolio, onClose, onSave }: { portfolio: Portfolio; onClose: () => void; onSave: (name: string, strategies: string[]) => void }) {
+  const [name, setName] = useState(portfolio.name);
+  const [selectedStrategies, setSelectedStrategies] = useState<string[]>(
+    STRATEGIES.slice(0, portfolio.strategies).map(s => s.id)
+  );
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (name.trim() && selectedStrategies.length > 0) {
+      onSave(name.trim(), selectedStrategies);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold text-white">Edit Portfolio</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-slate-300 text-sm mb-2 block">Portfolio Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full bg-[#1a1a2e] border border-[#1e1e2e] rounded-lg p-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-300 text-sm mb-2 block">Select Strategies</label>
+            <div className="grid grid-cols-2 gap-2">
+              {STRATEGIES.map(s => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedStrategies(prev =>
+                      prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                    );
+                  }}
+                  className={`p-3 rounded-lg border text-left text-sm transition-all ${
+                    selectedStrategies.includes(s.id)
+                      ? "border-blue-500 bg-blue-500/10 text-white"
+                      : "border-[#1e1e2e] text-slate-400 hover:border-blue-500/50"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 rounded-lg border border-[#1e1e2e] text-slate-400 hover:text-white hover:border-slate-500 transition-all text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim() || selectedStrategies.length === 0}
+              className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function PortfolioPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>(MOCK_PORTFOLIOS);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [editPortfolio, setEditPortfolio] = useState<Portfolio | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const totalEquity = portfolios.reduce((sum, p) => sum + p.equity, 0);
   const totalPnL = portfolios.reduce((sum, p) => sum + (p.equity * p.pnl_pct / 100), 0);
@@ -151,6 +234,26 @@ export default function PortfolioPage() {
     };
     setPortfolios(prev => [newPortfolio, ...prev]);
     setShowCreateModal(false);
+  };
+
+  const handleEditPortfolio = (name: string, strategies: string[]) => {
+    if (!editPortfolio) return;
+    setPortfolios(prev => prev.map(p =>
+      p.id === editPortfolio.id
+        ? { ...p, name, strategies: strategies.length }
+        : p
+    ));
+    setEditPortfolio(null);
+  };
+
+  const handleDeletePortfolio = async (id: string) => {
+    try {
+      await fetch(`/api/v1/portfolios/${id}`, { method: "DELETE" });
+    } catch (e) {
+      // ignore network errors in mock mode
+    }
+    setPortfolios(prev => prev.filter(p => p.id !== id));
+    setDeleteConfirm(null);
   };
 
   return (
@@ -226,11 +329,17 @@ export default function PortfolioPage() {
                     </button>
                     {menuOpen === portfolio.id && (
                       <div className="absolute right-0 top-full mt-1 bg-[#1a1a2e] border border-[#1e1e2e] rounded-lg shadow-xl z-10 min-w-[140px]">
-                        <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-[#2a2a3e] transition-colors">
+                        <button
+                          onClick={() => { setMenuOpen(null); setEditPortfolio(portfolio); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-[#2a2a3e] transition-colors"
+                        >
                           <Pencil size={14} />
                           Edit
                         </button>
-                        <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-[#2a2a3e] transition-colors">
+                        <button
+                          onClick={() => { setMenuOpen(null); setDeleteConfirm(portfolio.id); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-[#2a2a3e] transition-colors"
+                        >
                           <Trash2 size={14} />
                           Delete
                         </button>
@@ -262,6 +371,47 @@ export default function PortfolioPage() {
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreatePortfolio}
         />
+      )}
+
+      {editPortfolio && (
+        <EditPortfolioModal
+          portfolio={editPortfolio}
+          onClose={() => setEditPortfolio(null)}
+          onSave={handleEditPortfolio}
+        />
+      )}
+
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                <Trash2 size={20} className="text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Delete Portfolio</h2>
+                <p className="text-slate-400 text-sm">This action cannot be undone.</p>
+              </div>
+            </div>
+            <p className="text-slate-300 text-sm mb-6">
+              Are you sure you want to delete this portfolio? All associated data will be permanently removed.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 px-4 py-2 rounded-lg border border-[#1e1e2e] text-slate-400 hover:text-white hover:border-slate-500 transition-all text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeletePortfolio(deleteConfirm)}
+                className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors text-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
