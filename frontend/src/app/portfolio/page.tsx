@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authFetch } from "@/lib/authFetch";
 import { Briefcase, Plus, Layers, TrendingUp, TrendingDown, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
 
 interface Portfolio {
@@ -248,7 +249,7 @@ export default function PortfolioPage() {
 
   const handleDeletePortfolio = async (id: string) => {
     try {
-      await fetch(`/api/v1/portfolios/${id}`, { method: "DELETE" });
+      await authFetch(`/api/v1/portfolios/${id}`, { method: "DELETE" });
     } catch (e) {
       // ignore network errors in mock mode
     }

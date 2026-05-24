@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { authFetch } from "@/lib/authFetch";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock,
@@ -60,19 +61,19 @@ interface JobHistory {
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
 async function fetchJobs(): Promise<{ items: SchedulerJob[]; total: number }> {
-  const res = await fetch("/api/v1/scheduler/jobs");
+  const res = await authFetch("/api/v1/scheduler/jobs");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function fetchJobHistory(): Promise<{ items: JobHistory[]; total: number }> {
-  const res = await fetch("/api/v1/scheduler/jobs/history");
+  const res = await authFetch("/api/v1/scheduler/jobs/history");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function createJob(payload: any): Promise<any> {
-  const res = await fetch("/api/v1/scheduler/jobs", {
+  const res = await authFetch("/api/v1/scheduler/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -85,7 +86,7 @@ async function createJob(payload: any): Promise<any> {
 }
 
 async function updateJob(jobId: string, payload: any): Promise<any> {
-  const res = await fetch(`/api/v1/scheduler/jobs/${jobId}`, {
+  const res = await authFetch(`/api/v1/scheduler/jobs/${jobId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -95,12 +96,12 @@ async function updateJob(jobId: string, payload: any): Promise<any> {
 }
 
 async function deleteJob(jobId: string): Promise<void> {
-  const res = await fetch(`/api/v1/scheduler/jobs/${jobId}`, { method: "DELETE" });
+  const res = await authFetch(`/api/v1/scheduler/jobs/${jobId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
 async function runJob(jobId: string): Promise<any> {
-  const res = await fetch(`/api/v1/scheduler/jobs/${jobId}/run`, { method: "POST" });
+  const res = await authFetch(`/api/v1/scheduler/jobs/${jobId}/run`, { method: "POST" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

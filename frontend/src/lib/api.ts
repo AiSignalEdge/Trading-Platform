@@ -17,6 +17,7 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
     ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
+      "X-API-Key": process.env.NEXT_PUBLIC_API_KEY || "hermes-secret-api-key-2025",
       ...fetchOptions.headers,
     },
   });

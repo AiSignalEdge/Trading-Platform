@@ -32,6 +32,7 @@ export function useRealtimePrices(symbols: string[]) {
   const fetchPrices = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/data/ticker", {
+        headers: { "X-API-Key": "hermes-secret-api-key-2025" },
         signal: AbortSignal.timeout(3000),
       });
       if (!res.ok) return;

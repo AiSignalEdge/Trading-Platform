@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
+from middleware.auth import ApiKeyAuthMiddleware
 
 from core.config import settings
 from core.database import init_db, close_db
@@ -58,6 +59,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # API Key Auth
+    app.add_middleware(ApiKeyAuthMiddleware)
 
     # Root
     @app.get("/")

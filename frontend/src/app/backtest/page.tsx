@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { authFetch } from "@/lib/authFetch";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -94,20 +95,20 @@ const DIRECTION_OPTIONS = [
 // ─── Fetch helpers ─────────────────────────────────────────────────────────
 
 async function fetchMarkets(exchange: string): Promise<Record<string, { base: string; quote: string }>> {
-  const res = await fetch(`/api/v1/data/markets?exchange=${exchange}&quote=USDT`);
+  const res = await authFetch(`/api/v1/data/markets?exchange=${exchange}&quote=USDT`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   return data.markets ?? {};
 }
 
 async function fetchStrategies(): Promise<{ strategies: Array<{ name: string; description: string }> }> {
-  const res = await fetch(`/api/v1/signals`);
+  const res = await authFetch(`/api/v1/signals`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function runBacktest(payload: FormValues): Promise<any> {
-  const res = await fetch(`/api/v1/backtest/quick-run`, {
+  const res = await authFetch(`/api/v1/backtest/quick-run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -136,7 +137,7 @@ async function runPortfolioBacktest(payload: {
   correlation_reduction: number;
   max_drawdown_pct: number;
 }): Promise<any> {
-  const res = await fetch(`/api/v1/backtest/portfolio`, {
+  const res = await authFetch(`/api/v1/backtest/portfolio`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -168,7 +169,7 @@ async function runPortfolioWalkForward(payload: {
   test_days: number;
   skip_days: number;
 }): Promise<any> {
-  const res = await fetch(`/api/v1/backtest/portfolio-walk-forward`, {
+  const res = await authFetch(`/api/v1/backtest/portfolio-walk-forward`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
