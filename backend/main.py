@@ -3,41 +3,37 @@ FastAPI Application — Hermes Trading System.
 """
 
 import logging
+import sys
+import traceback
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
-from fastapi.middleware.cors import CORSMiddleware
-from middleware.auth import ApiKeyAuthMiddleware
-
-from core.config import settings
-from core.database import init_db, close_db
-from core.redis import init_redis, close_redis
-from services.backtest.batch_engine import BatchEngine
-from services.scheduler import scheduler_service
-
-# API Routes
-from api.routes import (strategies, backtest, portfolio, jobs, pairs, auth, ai,
-                         export, risk, health, data, websocket as ws_routes,
-                         signals, scheduler, describe, notifications, execution)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan — startup and shutdown."""
+    from core.database import init_db, close_db
+    from core.redis import init_redis, close_redis
+    from services.backtest.batch_engine import BatchEngine
+    from services.scheduler import scheduler_service
+
     await init_db()
     await init_redis()
     await BatchEngine.initialize()
     scheduler_service.start()
-    # Load all enabled jobs from DB into APScheduler
     try:
         await scheduler_service._load_jobs_from_db()
         logger.info("Loaded scheduled jobs from DB into APScheduler")
     except Exception as e:
         logger.warning(f"Could not load scheduled jobs from DB: {e}")
-    print(f"🚀 {settings.app_name} started")
+    print(f"🚀 Hermes Trading Dashboard started")
     yield
     await scheduler_service.stop()
     await BatchEngine.shutdown()
@@ -48,8 +44,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title=settings.app_name,
-        debug=settings.debug,
+        title="Hermes Trading Dashboard",
+        debug=True,
         lifespan=lifespan,
     )
 
@@ -62,24 +58,39 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # API Key Auth
+    # Debug middleware to catch all errors
+    @app.middleware("http")
+    async def debug_middleware(request: Request, call_next):
+        try:
+            response = await call_next(request)
+            return response
+        except Exception as e:
+            print(f"[DEBUG] Exception during {request.method} {request.url.path}: {type(e).__name__}: {e}")
+            traceback.print_exc()
+            return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    # Import and add auth middleware
+    from middleware.auth import ApiKeyAuthMiddleware
     app.add_middleware(ApiKeyAuthMiddleware)
 
     # Root
     @app.get("/")
     async def root():
-        return {
-            "name": settings.app_name,
-            "version": "1.0.0",
-            "docs": "/docs",
-            "health": "/api/v1/health",
-        }
+        return {"name": "Hermes Trading Dashboard", "version": "1.0.0", "docs": "/docs"}
 
     # Health check (no auth)
+    from api.routes import health, auth
     app.include_router(health.router)
-
-    # Auth routes (no auth)
     app.include_router(auth.router)
+
+    # Import all API routes
+    from api.routes import (
+        strategies, backtest, portfolio, jobs, pairs, ai, export, risk, data,
+        signals, scheduler, describe, notifications, execution, websocket as ws_routes,
+    )
+
+    # WebSocket routes (no auth)
+    app.include_router(ws_routes.router)
 
     # API v1 routes
     app.include_router(strategies.router)
@@ -96,14 +107,12 @@ def create_app() -> FastAPI:
     app.include_router(describe.router)
     app.include_router(notifications.router)
     app.include_router(execution.router)
-    app.include_router(ws_routes.router, prefix="/ws", tags=["websocket"])
 
     return app
 
 
 app = create_app()
 
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=settings.debug)
+    uvicorn.run("main:app", host="127.0.0.1", port=8080, reload=False)

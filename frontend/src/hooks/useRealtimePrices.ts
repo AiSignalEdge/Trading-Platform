@@ -31,7 +31,9 @@ export function useRealtimePrices(symbols: string[]) {
 
   const fetchPrices = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/data/ticker", {
+      // GET /api/v1/data/tickers?exchange=binance&symbols=BTC/USDT,ETH/USDT,SOL/USDT
+      const params = new URLSearchParams({ exchange: "binance", symbols: symbols.join(",") });
+      const res = await fetch(`/api/v1/data/tickers?${params}`, {
         headers: { "X-API-Key": "hermes-secret-api-key-2025" },
         signal: AbortSignal.timeout(3000),
       });

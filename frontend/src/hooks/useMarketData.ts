@@ -14,6 +14,8 @@ export interface TickerData {
 
 const SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "AVAX/USDT", "BNB/USDT"];
 
+const API_KEY = "hermes-secret-api-key-2025";
+
 /** useLivePrices — polls /api/v1/data/tickers every 5 seconds. */
 export function useLivePrices() {
   const [prices, setPrices] = useState<Record<string, TickerData>>({});
@@ -24,7 +26,7 @@ export function useLivePrices() {
       const symbolsParam = SYMBOLS.join(",");
       const res = await fetch(
         `/api/v1/data/tickers?exchange=binance&symbols=${encodeURIComponent(symbolsParam)}`,
-        { signal: AbortSignal.timeout(4000) }
+        { headers: { "X-API-Key": API_KEY }, signal: AbortSignal.timeout(4000) }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: TickerData[] = await res.json();
