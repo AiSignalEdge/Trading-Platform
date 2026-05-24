@@ -418,7 +418,7 @@ async def run_backtest_now(
 
 @router.get("", response_model=list[BacktestResultResponse])
 async def list_backtests(
-    limit: int = Query(20, le=100),
+    limit: int = Query(20, ge=0, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -428,7 +428,15 @@ async def list_backtests(
         select(BacktestResult).order_by(BacktestResult.completed_at.desc().nullslast()).limit(limit)
     )
     backtests = result.scalars().all()
-    return [BacktestResultResponse.model_validate({**bt.__dict__, "id": str(bt.id), "config_id": str(bt.config_id)}) for bt in backtests]
+    return [
+        BacktestResultResponse.model_validate({
+            "id": str(bt.id),
+            "config_id": str(bt.config_id),
+            "strategy_id": str(bt.strategy_id) if bt.strategy_id else None,
+            **{k: v for k, v in bt.__dict__.items() if k not in ("id", "config_id", "strategy_id")}
+        })
+        for bt in backtests
+    ]
 
 
 @router.get("/{backtest_id}", response_model=BacktestResultResponse)
