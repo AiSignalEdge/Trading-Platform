@@ -43,7 +43,11 @@ async def prices_websocket(websocket: WebSocket):
 @router.websocket("/ws/ohlcv")
 async def ohlcv_websocket(websocket: WebSocket):
     """Minimal OHLCV WebSocket."""
-    await websocket.accept()
+    try:
+        await websocket.accept()
+    except RuntimeError:
+        # Connection already accepted or invalid state — skip
+        return
     try:
         msg = await websocket.receive_json()
         if msg.get("action") == "subscribe":
@@ -55,4 +59,5 @@ async def ohlcv_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        logger.error(f"OHLCV WS error: {e}")
+        # Don't log expected client-edge cases (bad JSON, unexpected disconnect)
+        pass
