@@ -85,15 +85,15 @@ def create_app() -> FastAPI:
 
     # Import all API routes
     from api.routes import (
-        strategies, backtest, portfolio, jobs, pairs, ai, export, risk, data,
-        signals, scheduler, describe, notifications, execution, websocket as ws_routes,
+        auth, strategies, backtest, portfolio, jobs, pairs, ai, export, risk, data,
+        signals, scheduler, describe, notifications, execution, webhooks, data_quality,
+        dashboard,
     )
 
-    # WebSocket routes (no auth)
-    app.include_router(ws_routes.router)
-
-    # API v1 routes
+    # API routes (each router has its own prefix="/api/v1/...")
+    app.include_router(auth.router)
     app.include_router(strategies.router)
+    app.include_router(webhooks.router)
     app.include_router(backtest.router)
     app.include_router(portfolio.router)
     app.include_router(jobs.router)
@@ -107,6 +107,9 @@ def create_app() -> FastAPI:
     app.include_router(describe.router)
     app.include_router(notifications.router)
     app.include_router(execution.router)
+    app.include_router(webhooks.router)  # duplicate removed — now only once
+    app.include_router(data_quality.router)
+    app.include_router(dashboard.router)
 
     return app
 

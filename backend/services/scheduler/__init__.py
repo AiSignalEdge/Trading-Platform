@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import uuid4
 
@@ -169,9 +169,9 @@ class SchedulerService:
             )
         elif trigger_type == "interval":
             return IntervalTrigger(
-                seconds=trigger_config.get("seconds"),
-                minutes=trigger_config.get("minutes"),
-                hours=trigger_config.get("hours"),
+                seconds=trigger_config.get("seconds") or 0,
+                minutes=trigger_config.get("minutes") or 0,
+                hours=trigger_config.get("hours") or 0,
             )
         elif trigger_type == "date":
             run_at = trigger_config.get("run_at")
@@ -405,8 +405,7 @@ class SchedulerService:
             return
 
         execution_id = f"exec-{uuid4().hex[:12]}"
-        started_at = datetime.now(timezone.utc)
-
+        started_at = datetime.now(timezone.utc).replace(tzinfo=None)
         exec_record = ExecutionRecord(
             execution_id=execution_id,
             job_id=job_id,
@@ -609,7 +608,7 @@ class SchedulerService:
             return None
 
         execution_id = f"exec-{uuid4().hex[:12]}"
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         exec_record = ExecutionRecord(
             execution_id=execution_id,
@@ -659,7 +658,7 @@ class SchedulerService:
                 await session.commit()
 
         finally:
-            exec_record.finished_at = datetime.now(timezone.utc)
+            exec_record.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         webhook_url = db_job.payload.get("webhook_url")
         if webhook_url:

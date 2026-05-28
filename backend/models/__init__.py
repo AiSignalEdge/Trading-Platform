@@ -12,6 +12,8 @@ from .order import Order
 from .position import Position
 from .job import AutomatedJob, MarketRegime
 from .scheduler_job import ScheduledJob
+from .webhook import Webhook
+from .portfolio import Portfolio
 
 __all__ = [
     "Base",
@@ -26,4 +28,6 @@ __all__ = [
     "AutomatedJob",
     "MarketRegime",
     "ScheduledJob",
+    "Webhook",
+    "Portfolio",
 ]

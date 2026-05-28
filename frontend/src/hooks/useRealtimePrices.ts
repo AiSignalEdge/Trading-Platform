@@ -14,7 +14,7 @@ export interface PriceTick {
 
 const WS_URL =
   typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:8080/ws/prices`
+    ? `ws://${window.location.hostname}:8086/ws/prices`
     : null;
 
 const POLL_INTERVAL = 5000; // fallback polling interval ms

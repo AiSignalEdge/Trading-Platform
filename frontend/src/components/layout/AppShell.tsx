@@ -58,7 +58,7 @@ function useMarketTicker() {
         const syms = STATIC_SYMBOLS.join(",");
         const res = await fetch(
           `/api/v1/data/tickers?exchange=binance&symbols=${encodeURIComponent(syms)}`,
-          { signal: AbortSignal.timeout(4000) }
+          { headers: { "X-API-Key": "hermes-secret-api-key-2025" }, signal: AbortSignal.timeout(4000) }
         );
         if (!res.ok) return;
         const data = await res.json();

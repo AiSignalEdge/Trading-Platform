@@ -4,6 +4,7 @@ Backtest Routes - All backtest, batch, walk-forward, and Monte Carlo endpoints.
 Section 13: API Server from PLAN-v2.md
 """
 
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID, uuid4
@@ -15,12 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.database import get_db
+from core.redis import get_redis
 from models.backtest import BacktestConfig, BacktestResult
 import models.user  # noqa: F401 — needed for queries against User table
 from services.backtest.engine import BacktestEngine, BacktestConfig as EngineConfig
 from services.backtest.batch_engine import BatchEngine, BatchConfigItem, BatchJob, JobStatus
 
 router = APIRouter(prefix="/api/v1/backtest", tags=["backtest"])
+
+# Cache TTL constants
+BACKTEST_LIST_TTL = 30  # 30 seconds
 
 _startup_handlers: list = []
 
@@ -404,6 +409,10 @@ async def run_backtest_now(
             db.add(db_result)
 
         await db.commit()
+
+        # Invalidate backtest list cache on completion
+        redis = await get_redis()
+        await redis.delete("backtest:list:*")
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
@@ -424,11 +433,19 @@ async def list_backtests(
     """
     List recent backtest results.
     """
+    # Try to get from Redis cache
+    cache_key = f"backtest:list:{limit}"
+    redis = await get_redis()
+    cached = await redis.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
     result = await db.execute(
         select(BacktestResult).order_by(BacktestResult.completed_at.desc().nullslast()).limit(limit)
     )
     backtests = result.scalars().all()
-    return [
+
+    response = [
         BacktestResultResponse.model_validate({
             "id": str(bt.id),
             "config_id": str(bt.config_id),
@@ -437,6 +454,12 @@ async def list_backtests(
         })
         for bt in backtests
     ]
+
+    # Cache the response
+    response_json = json.dumps([r.model_dump(mode='json') for r in response])
+    await redis.setex(cache_key, BACKTEST_LIST_TTL, response_json)
+
+    return response
 
 
 @router.get("/{backtest_id}", response_model=BacktestResultResponse)

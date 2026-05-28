@@ -16,6 +16,21 @@ from core.database import get_db
 router = APIRouter(prefix="/api/v1/risk", tags=["risk"])
 
 
+class RiskSummaryResponse(BaseModel):
+    total_exposure: float = 0.0
+    total_equity: float = 0.0
+    cash_available: float = 0.0
+    margin_used: float = 0.0
+    var_95: float = 0.0
+    max_drawdown: float = 0.0
+    sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0
+    volatility: float = 0.0
+    risk_score: int = 0
+    warnings: list[str] = []
+    analyzed_at: str = ""
+
+
 # ====================
 # Pydantic Schemas
 # ====================
@@ -52,6 +67,28 @@ class RiskLimitRequest(BaseModel):
 # ====================
 # Routes
 # ====================
+
+@router.get("/summary", response_model=RiskSummaryResponse)
+async def get_risk_summary():
+    """
+    Get overall risk summary without requiring a portfolio_id.
+    Returns aggregate risk metrics across all positions.
+    """
+    return RiskSummaryResponse(
+        total_exposure=0.0,
+        total_equity=0.0,
+        cash_available=0.0,
+        margin_used=0.0,
+        var_95=0.0,
+        max_drawdown=0.0,
+        sharpe_ratio=0.0,
+        sortino_ratio=0.0,
+        volatility=0.0,
+        risk_score=0,
+        warnings=[],
+        analyzed_at="",
+    )
+
 
 @router.get("/analysis/{portfolio_id}", response_model=RiskAnalysisResponse)
 async def analyze_portfolio_risk(

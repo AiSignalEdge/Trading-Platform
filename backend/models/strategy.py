@@ -74,6 +74,14 @@ class Strategy(Base):
         Boolean,
         default=False,
     )
+    parameters: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+    )
+    pine_script: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,

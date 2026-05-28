@@ -11,8 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from core.config import settings
 from core.database import get_db
@@ -49,14 +50,13 @@ class TokenData(BaseModel):
 
 
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     username: str
     email: str
     plan: str
     created_at: str
-
-    class Config:
-        from_attributes = True
 
 
 # ====================
@@ -74,10 +74,10 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + (
-        expires_delta or timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
     )
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 async def get_current_user(
@@ -90,7 +90,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
@@ -117,8 +117,6 @@ async def get_current_user(
 async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """Register a new user."""
     # Check if username exists
-    from sqlalchemy import select
-
     result = await db.execute(select(User).where(User.username == user_data.username))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username already taken")
@@ -137,7 +135,13 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
     await db.refresh(user)
-    return UserResponse.model_validate(user)
+    return UserResponse(
+        id=str(user.id),
+        username=user.username,
+        email=user.email,
+        plan=user.plan,
+        created_at=str(user.created_at),
+    )
 
 
 @router.post("/login", response_model=Token)
@@ -160,4 +164,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current authenticated user."""
-    return UserResponse.model_validate(current_user)
+    return UserResponse(
+        id=str(current_user.id),
+        username=current_user.username,
+        email=current_user.email,
+        plan=current_user.plan,
+        created_at=str(current_user.created_at),
+    )

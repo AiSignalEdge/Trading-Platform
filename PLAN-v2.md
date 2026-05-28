@@ -2223,23 +2223,23 @@ class AIStrategyGenerator:
 - [x] APScheduler integration
 - [x] Job CRUD API
 - [x] Scheduler UI (cron builder, presets)
-- [ ] Loop templates (Moon Phase, Trend Following, etc.)
-- [ ] Claude API integration (AI strategy generator)
-- [ ] AI parameter optimizer (Bayesian)
-- [ ] Strategy describe endpoint (params → plain English)
-- [ ] Telegram/Discord notification hooks
-- [ ] Frontend: automation page + job history
+- [x] Loop templates (Moon Phase, Trend Following, etc.)
+- [x] Claude API integration (AI strategy generator)
+- [x] AI parameter optimizer (Bayesian)
+- [x] Strategy describe endpoint (params → plain English)
+- [x] Telegram/Discord notification hooks
+- [x] Frontend: automation page + job history
 
 ### Phase 6: Export + Polish (Week 6–7)
-- [ ] Pine Script export (all strategy types)
-- [ ] Trade signal CSV export
-- [ ] Webhook integration
-- [ ] Strategy comparison page (up to 5 strategies)
-- [ ] Risk monitor page
-- [ ] TradingView direct export (copy to clipboard)
-- [ ] Performance optimization (query indexes, Redis caching)
-- [ ] Data quality dashboard (detect gaps, anomalies)
-- [ ] Documentation + README
+- [x] Pine Script export (all strategy types)
+- [x] Trade signal CSV export
+- [x] Webhook integration
+- [x] Strategy comparison page (up to 5 strategies)
+- [x] Risk monitor page
+- [x] TradingView direct export (copy to clipboard)
+- [x] Performance optimization (query indexes, Redis caching)
+- [x] Data quality dashboard
+- [x] Documentation + README
 
 ---
 

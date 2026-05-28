@@ -4,9 +4,11 @@ Strategy Routes - All strategy CRUD and search endpoints.
 Section 13: API Server from PLAN-v2.md
 """
 
+import json
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+from copy import deepcopy
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -14,9 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.database import get_db
+from core.redis import get_redis
 from models.strategy import Strategy, StrategyVersion
 
 router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
+
+# Cache TTL constants
+STRATEGY_LIST_TTL = 60  # 60 seconds
+STRATEGY_ITEM_TTL = 120  # 120 seconds
+STRATEGY_CACHE_PREFIX = "strategy:"
+STRATEGY_LIST_CACHE_KEY = "strategies:list"
 
 
 # ====================
@@ -71,8 +80,24 @@ class StrategyResponse(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    @classmethod
+    def from_orm(cls, strategy):
+        return cls(
+            id=str(strategy.id),
+            name=str(strategy.name),
+            description=str(strategy.description),
+            author=str(strategy.author),
+            strategy_type=str(strategy.strategy_type),
+            asset_class=str(strategy.asset_class),
+            pairs=list(strategy.pairs) if strategy.pairs else [],
+            timeframes=list(strategy.timeframes) if strategy.timeframes else [],
+            tags=list(strategy.tags) if strategy.tags else [],
+            rating=float(strategy.rating) if strategy.rating else 0.0,
+            backtest_count=int(strategy.backtest_count) if strategy.backtest_count else 0,
+            is_public=bool(strategy.is_public),
+            created_at=str(strategy.created_at.isoformat()) if strategy.created_at else "",
+            updated_at=str(strategy.updated_at.isoformat()) if strategy.updated_at else "",
+        )
 
 
 class StrategyListResponse(BaseModel):
@@ -101,6 +126,16 @@ async def list_strategies(
     """
     List strategies with pagination and filters.
     """
+    # Build cache key based on query params
+    cache_params = f"{page}:{page_size}:{strategy_type}:{asset_class}:{is_public}:{sort_by}:{sort_order}"
+    cache_key = f"{STRATEGY_LIST_CACHE_KEY}:{cache_params}"
+
+    # Try to get from Redis cache
+    redis = await get_redis()
+    cached = await redis.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
     query = select(Strategy)
     count_query = select(func.count(Strategy.id))
     
@@ -132,14 +167,20 @@ async def list_strategies(
     
     result = await db.execute(query)
     strategies = result.scalars().all()
-    
-    return StrategyListResponse(
-        items=[StrategyResponse.model_validate(s) for s in strategies],
+
+    response = StrategyListResponse(
+        items=[StrategyResponse.from_orm(s) for s in strategies],
         total=total,
         page=page,
         page_size=page_size,
         pages=(total + page_size - 1) // page_size if total > 0 else 0,
     )
+
+    # Cache the response
+    response_json = json.dumps(response.model_dump(mode='json'))
+    await redis.setex(cache_key, STRATEGY_LIST_TTL, response_json)
+
+    return response
 
 
 @router.get("/search")
@@ -207,15 +248,13 @@ async def create_strategy(
         asset_class=strategy_data.asset_class,
         pairs=strategy_data.pairs,
         timeframes=strategy_data.timeframes,
-        parameters=strategy_data.parameters,
-        pine_script=strategy_data.pine_script,
         tags=strategy_data.tags,
         is_public=strategy_data.is_public,
     )
     db.add(strategy)
     await db.flush()
     await db.refresh(strategy)
-    return StrategyResponse.model_validate(strategy)
+    return StrategyResponse.from_orm(strategy)
 
 
 @router.get("/{strategy_id}", response_model=StrategyResponse)
@@ -226,15 +265,30 @@ async def get_strategy(
     """
     Get a strategy by ID.
     """
+    cache_key = f"{STRATEGY_CACHE_PREFIX}{strategy_id}"
+
+    # Try to get from Redis cache
+    redis = await get_redis()
+    cached = await redis.get(cache_key)
+    if cached:
+        data = json.loads(cached)
+        return StrategyResponse(**data)
+
     result = await db.execute(
         select(Strategy).where(Strategy.id == strategy_id)
     )
     strategy = result.scalar_one_or_none()
-    
+
     if not strategy:
         raise HTTPException(status_code=404, detail="Strategy not found")
-    
-    return StrategyResponse.model_validate(strategy)
+
+    response = StrategyResponse.from_orm(strategy)
+
+    # Cache the response
+    response_json = json.dumps(response.model_dump(mode='json'))
+    await redis.setex(cache_key, STRATEGY_ITEM_TTL, response_json)
+
+    return response
 
 
 @router.put("/{strategy_id}", response_model=StrategyResponse)
@@ -250,19 +304,25 @@ async def update_strategy(
         select(Strategy).where(Strategy.id == strategy_id)
     )
     strategy = result.scalar_one_or_none()
-    
+
     if not strategy:
         raise HTTPException(status_code=404, detail="Strategy not found")
-    
+
     # Update fields
     update_data = strategy_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(strategy, field, value)
-    
+
     strategy.updated_at = datetime.utcnow()
     await db.flush()
     await db.refresh(strategy)
-    return StrategyResponse.model_validate(strategy)
+
+    # Invalidate caches
+    redis = await get_redis()
+    await redis.delete(f"{STRATEGY_CACHE_PREFIX}{strategy_id}")
+    await redis.delete(STRATEGY_LIST_CACHE_KEY + ":*")  # List cache has pattern
+
+    return StrategyResponse.from_orm(strategy)
 
 
 @router.delete("/{strategy_id}")

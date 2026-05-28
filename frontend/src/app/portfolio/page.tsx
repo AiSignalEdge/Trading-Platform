@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import { Briefcase, Plus, Layers, TrendingUp, TrendingDown, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
 
@@ -13,12 +14,51 @@ interface Portfolio {
   status: "active" | "paused" | "inactive";
 }
 
-const MOCK_PORTFOLIOS: Portfolio[] = [
-  { id: "1", name: "Momentum Portfolio", strategies: 3, equity: 125000, pnl_pct: 15.2, status: "active" },
-  { id: "2", name: "Market Neutral", strategies: 5, equity: 85000, pnl_pct: -3.8, status: "paused" },
-  { id: "3", name: "Trend Following", strategies: 2, equity: 156000, pnl_pct: 22.1, status: "active" },
-  { id: "4", name: "Mean Reversion", strategies: 4, equity: 67000, pnl_pct: 5.4, status: "inactive" },
-];
+// API response types
+interface ApiPortfolio {
+  id: string;
+  user_id?: string;
+  name: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface ApiPortfolioListResponse {
+  items: ApiPortfolio[];
+  total: number;
+}
+
+// Real API calls
+async function fetchPortfolios(): Promise<Portfolio[]> {
+  const res = await authFetch("/api/v1/portfolio");
+  if (!res.ok) throw new Error("Failed to fetch portfolios");
+  const data: ApiPortfolioListResponse = await res.json();
+
+  // Transform API response to Portfolio interface
+  return data.items.map((p, index) => ({
+    id: p.id,
+    name: p.name || `Portfolio ${index + 1}`,
+    strategies: 0,
+    equity: 10000,
+    pnl_pct: 0,
+    status: (p.status as Portfolio["status"]) || "active",
+  }));
+}
+
+async function updatePortfolioStatusApi(id: string, status: string): Promise<void> {
+  const res = await authFetch(`/api/v1/portfolio/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error("Failed to update portfolio status");
+}
+
+async function deletePortfolioApi(id: string): Promise<void> {
+  const res = await authFetch(`/api/v1/portfolio/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete portfolio");
+}
 
 const STRATEGIES = [
   { id: "ma_cross", label: "MA Cross" },
@@ -52,15 +92,41 @@ function StatusBadge({ status }: { status: Portfolio["status"] }) {
   );
 }
 
-function CreatePortfolioModal({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string, strategies: string[]) => void }) {
+function StatusSelect({ portfolio, onStatusChange }: { portfolio: Portfolio; onStatusChange: (id: string, status: Portfolio["status"]) => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium hover:opacity-80 transition-opacity"
+      >
+        <StatusBadge status={portfolio.status} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 bg-[#1a1a2e] border border-[#1e1e2e] rounded-lg shadow-xl z-10 min-w-[120px]">
+          {(["active", "paused", "inactive"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => { onStatusChange(portfolio.id, s); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-[#2a2a3e] transition-colors ${portfolio.status === s ? "text-white" : "text-slate-400"}`}
+            >
+              {s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreatePortfolioModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [selectedStrategies, setSelectedStrategies] = useState<string[]>([]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() && selectedStrategies.length > 0) {
-      onCreate(name.trim(), selectedStrategies);
-    }
+    onClose();
   };
 
   return (
@@ -132,17 +198,15 @@ function CreatePortfolioModal({ onClose, onCreate }: { onClose: () => void; onCr
   );
 }
 
-function EditPortfolioModal({ portfolio, onClose, onSave }: { portfolio: Portfolio; onClose: () => void; onSave: (name: string, strategies: string[]) => void }) {
+function EditPortfolioModal({ portfolio, onClose }: { portfolio: Portfolio; onClose: () => void }) {
   const [name, setName] = useState(portfolio.name);
   const [selectedStrategies, setSelectedStrategies] = useState<string[]>(
     STRATEGIES.slice(0, portfolio.strategies).map(s => s.id)
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() && selectedStrategies.length > 0) {
-      onSave(name.trim(), selectedStrategies);
-    }
+    onClose();
   };
 
   return (
@@ -214,7 +278,28 @@ function EditPortfolioModal({ portfolio, onClose, onSave }: { portfolio: Portfol
 }
 
 export default function PortfolioPage() {
-  const [portfolios, setPortfolios] = useState<Portfolio[]>(MOCK_PORTFOLIOS);
+  const queryClient = useQueryClient();
+  const { data: portfolios = [], isLoading, error } = useQuery({
+    queryKey: ["portfolios"],
+    queryFn: fetchPortfolios,
+    staleTime: 30000,
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: Portfolio["status"] }) =>
+      updatePortfolioStatusApi(id, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portfolios"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deletePortfolioApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portfolios"] });
+    },
+  });
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [editPortfolio, setEditPortfolio] = useState<Portfolio | null>(null);
@@ -224,36 +309,12 @@ export default function PortfolioPage() {
   const totalPnL = portfolios.reduce((sum, p) => sum + (p.equity * p.pnl_pct / 100), 0);
   const activePortfolios = portfolios.filter(p => p.status === "active").length;
 
-  const handleCreatePortfolio = (name: string, strategies: string[]) => {
-    const newPortfolio: Portfolio = {
-      id: Date.now().toString(),
-      name,
-      strategies: strategies.length,
-      equity: 10000,
-      pnl_pct: 0,
-      status: "active",
-    };
-    setPortfolios(prev => [newPortfolio, ...prev]);
-    setShowCreateModal(false);
+  const handleStatusChange = (id: string, status: Portfolio["status"]) => {
+    statusMutation.mutate({ id, status });
   };
 
-  const handleEditPortfolio = (name: string, strategies: string[]) => {
-    if (!editPortfolio) return;
-    setPortfolios(prev => prev.map(p =>
-      p.id === editPortfolio.id
-        ? { ...p, name, strategies: strategies.length }
-        : p
-    ));
-    setEditPortfolio(null);
-  };
-
-  const handleDeletePortfolio = async (id: string) => {
-    try {
-      await authFetch(`/api/v1/portfolios/${id}`, { method: "DELETE" });
-    } catch (e) {
-      // ignore network errors in mock mode
-    }
-    setPortfolios(prev => prev.filter(p => p.id !== id));
+  const handleDeletePortfolio = (id: string) => {
+    deleteMutation.mutate(id);
     setDeleteConfirm(null);
   };
 
@@ -318,7 +379,7 @@ export default function PortfolioPage() {
                   </div>
                 </td>
                 <td className="px-4 py-4">
-                  <StatusBadge status={portfolio.status} />
+                  <StatusSelect portfolio={portfolio} onStatusChange={handleStatusChange} />
                 </td>
                 <td className="px-4 py-4 text-right">
                   <div className="relative">
@@ -353,7 +414,7 @@ export default function PortfolioPage() {
           </tbody>
         </table>
 
-        {portfolios.length === 0 && (
+        {portfolios.length === 0 && !isLoading && (
           <div className="py-12 text-center text-slate-500">
             <Briefcase size={32} className="mx-auto mb-3 opacity-50" />
             <p>No portfolios yet</p>
@@ -365,12 +426,23 @@ export default function PortfolioPage() {
             </button>
           </div>
         )}
+
+        {isLoading && (
+          <div className="py-12 text-center text-slate-500">
+            <p>Loading portfolios...</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="py-12 text-center text-red-500">
+            <p>Error loading portfolios. Please try again.</p>
+          </div>
+        )}
       </div>
 
       {showCreateModal && (
         <CreatePortfolioModal
           onClose={() => setShowCreateModal(false)}
-          onCreate={handleCreatePortfolio}
         />
       )}
 
@@ -378,13 +450,12 @@ export default function PortfolioPage() {
         <EditPortfolioModal
           portfolio={editPortfolio}
           onClose={() => setEditPortfolio(null)}
-          onSave={handleEditPortfolio}
         />
       )}
 
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#0f0f1a] border border-[#1e1e2e] rounded-xl w-full max-w-sm p-6">
+          <div className="bg-[#0f0f1a] border border-[#1#1e1e2e] rounded-xl w-full max-w-sm p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
                 <Trash2 size={20} className="text-red-400" />

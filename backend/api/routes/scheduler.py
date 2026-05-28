@@ -151,16 +151,47 @@ async def list_jobs(
     return JobListResponse(items=items, total=total)
 
 
+@router.get("/jobs/history", response_model=HistoryResponse)
+async def get_global_history(limit: int = Query(50, ge=1, le=200)):
+    """Get global execution history across all jobs.
+
+    NOTE: Authentication pending implementation - this endpoint exposes execution
+    history for all jobs without auth verification.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning("scheduler.get_global_history accessed - auth not yet implemented")
+
+    all_records = []
+    for job_id, records in scheduler_service._history.items():
+        all_records.extend(records)
+
+    sorted_records = sorted(all_records, key=lambda r: r.started_at, reverse=True)
+    items = [r.to_dict() for r in sorted_records[:limit]]
+    return HistoryResponse(items=items, total=len(items))
+
+
+@router.get("/jobs/{job_id}/history", response_model=HistoryResponse)
+async def get_job_history(job_id: str, limit: int = Query(20, ge=1, le=100)):
+    """Get execution history for a specific job."""
+    job = await scheduler_service.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    items = scheduler_service.get_history(job_id, limit=limit)
+    return HistoryResponse(items=items, total=len(items))
+
+
 @router.get("/jobs/{job_id}", response_model=JobResponse)
 async def get_job(job_id: str):
     """Get a single job by ID.
-    
+
     NOTE: Authentication pending implementation.
     """
     import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"scheduler.get_job({job_id}) accessed - auth not yet implemented")
-    
+
     job = await scheduler_service.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
@@ -213,34 +244,3 @@ async def trigger_job(job_id: str):
 
     exec_id = f"exec-{uuid4().hex[:12]}"
     return TriggerResponse(execution_id=exec_id, status="running")
-
-
-@router.get("/jobs/history", response_model=HistoryResponse)
-async def get_global_history(limit: int = Query(50, ge=1, le=200)):
-    """Get global execution history across all jobs.
-    
-    NOTE: Authentication pending implementation - this endpoint exposes execution
-    history for all jobs without auth verification.
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning("scheduler.get_global_history accessed - auth not yet implemented")
-    
-    all_records = []
-    for job_id, records in scheduler_service._history.items():
-        all_records.extend(records)
-
-    sorted_records = sorted(all_records, key=lambda r: r.started_at, reverse=True)
-    items = [r.to_dict() for r in sorted_records[:limit]]
-    return HistoryResponse(items=items, total=len(items))
-
-
-@router.get("/jobs/{job_id}/history", response_model=HistoryResponse)
-async def get_job_history(job_id: str, limit: int = Query(20, ge=1, le=100)):
-    """Get execution history for a specific job."""
-    job = await scheduler_service.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
-
-    items = scheduler_service.get_history(job_id, limit=limit)
-    return HistoryResponse(items=items, total=len(items))
